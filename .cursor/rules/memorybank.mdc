@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Use memorybank to keep track of progress on the execution plan.  If you are interrupted or restarted, please use the memorybank to determine where to restart.
