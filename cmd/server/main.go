@@ -51,8 +51,16 @@ func main() {
 	batchHistoryRepo := repository.NewBatchHistoryRepository(db, logger)
 
 	// Initialize services
-	tradeServiceClient := service.NewTradeServiceClient(cfg.TradeServiceURL, logger)
-	executionService := service.NewExecutionService(executionRepo, batchHistoryRepo, tradeServiceClient, logger)
+	tradeClient := service.NewTradeServiceClient(cfg.TradeServiceURL, logger)
+	tradeClient.SetRetryConfig(cfg.RetryMaxAttempts, time.Duration(cfg.RetryBaseDelay)*time.Millisecond)
+
+	executionService := service.NewExecutionService(
+		executionRepo,
+		batchHistoryRepo,
+		tradeClient,
+		logger,
+		cfg,
+	)
 
 	// Initialize handlers
 	executionHandler := handler.NewExecutionHandler(executionService, logger)
