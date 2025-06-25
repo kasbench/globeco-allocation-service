@@ -1,0 +1,189 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "GlobeCo Allocation Service",
+    "tags": ["globeco", "allocation", "microservice"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Service Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"globeco-allocation-service\"}",
+            "legendFormat": "Service Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"globeco-allocation-service\"}[5m])",
+            "legendFormat": "{{method}} {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Response Times",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"globeco-allocation-service\"}[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"globeco-allocation-service\"}[5m]))",
+            "legendFormat": "50th percentile"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 18, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Execution Processing",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(allocations_executions_batch_processed_total[5m])",
+            "legendFormat": "Batches {{status}}"
+          },
+          {
+            "expr": "rate(allocations_executions_created_total[5m])",
+            "legendFormat": "Created {{trade_type}}"
+          },
+          {
+            "expr": "rate(allocations_executions_skipped_total[5m])",
+            "legendFormat": "Skipped {{reason}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Trade Service Calls",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(allocations_trade_service_calls_total[5m])",
+            "legendFormat": "{{method}} {{status}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(allocations_trade_service_latency_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile latency"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Database Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(allocations_database_operations_total[5m])",
+            "legendFormat": "{{operation}} {{table}} {{status}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(allocations_database_operation_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile latency"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Portfolio CLI Processing",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(allocations_portfolio_cli_invocations_total[5m])",
+            "legendFormat": "CLI {{status}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(allocations_portfolio_cli_processing_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile duration"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Error Rates",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(allocations_executions_errored_total[5m])",
+            "legendFormat": "Execution Errors {{error_type}}"
+          },
+          {
+            "expr": "rate(allocations_trade_service_errors_total[5m])",
+            "legendFormat": "Trade Service Errors {{method}}"
+          },
+          {
+            "expr": "rate(allocations_database_connection_errors_total[5m])",
+            "legendFormat": "DB Connection Errors"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      },
+      {
+        "id": 9,
+        "title": "File Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(allocations_portfolio_files_generated_total[5m])",
+            "legendFormat": "Files Generated {{status}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(allocations_file_size_bytes_bucket[5m]))",
+            "legendFormat": "95th percentile file size"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      },
+      {
+        "id": 10,
+        "title": "Batch Processing",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(allocations_batch_size_bucket[5m]))",
+            "legendFormat": "95th percentile batch size"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(allocations_batch_processing_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile duration"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+} 

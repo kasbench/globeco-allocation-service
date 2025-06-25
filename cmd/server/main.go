@@ -17,6 +17,7 @@ import (
 	"github.com/kasbench/globeco-allocation-service/internal/config"
 	"github.com/kasbench/globeco-allocation-service/internal/handler"
 	internalMiddleware "github.com/kasbench/globeco-allocation-service/internal/middleware"
+	"github.com/kasbench/globeco-allocation-service/internal/observability"
 	"github.com/kasbench/globeco-allocation-service/internal/repository"
 	"github.com/kasbench/globeco-allocation-service/internal/service"
 )
@@ -28,16 +29,31 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Initialize logger
-	logger, err := initLogger(cfg.LogLevel)
+	// Initialize enhanced structured logger
+	structuredLogger, err := initStructuredLogger(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
+		log.Fatalf("Failed to initialize structured logger: %v", err)
 	}
-	defer logger.Sync()
+	defer structuredLogger.Sync()
 
+	logger := structuredLogger.Logger()
 	logger.Info("Starting Allocation Service",
 		zap.String("version", "1.0.0"),
 		zap.Int("port", cfg.Port))
+
+	// Initialize tracing
+	tracingManager, err := observability.NewTracingManager(observability.TracingConfig{
+		Enabled:        cfg.Observability.TracingEnabled,
+		OTLPEndpoint:   cfg.Observability.TracingOTLPEndpoint,
+		SamplingRatio:  cfg.Observability.TracingSamplingRatio,
+		TracingHeaders: cfg.Observability.TracingHeaders,
+	}, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize tracing", zap.Error(err))
+	}
+
+	// Initialize business metrics
+	businessMetrics := observability.NewBusinessMetrics(logger)
 
 	// Initialize database connection
 	db, err := repository.NewPostgresDB(cfg.Database)
@@ -50,7 +66,7 @@ func main() {
 	executionRepo := repository.NewExecutionRepository(db, logger)
 	batchHistoryRepo := repository.NewBatchHistoryRepository(db, logger)
 
-	// Initialize services
+	// Initialize services with metrics integration
 	tradeClient := service.NewTradeServiceClient(cfg.TradeServiceURL, logger)
 	tradeClient.SetRetryConfig(cfg.RetryMaxAttempts, time.Duration(cfg.RetryBaseDelay)*time.Millisecond)
 
@@ -62,12 +78,12 @@ func main() {
 		cfg,
 	)
 
-	// Initialize handlers
+	// Initialize handlers with structured logging
 	executionHandler := handler.NewExecutionHandler(executionService, logger)
 	healthHandler := handler.NewHealthHandler(db, logger)
 
-	// Setup router
-	r := setupRouter(cfg, logger, executionHandler, healthHandler)
+	// Setup router with observability middleware
+	r := setupRouterWithObservability(cfg, structuredLogger, businessMetrics, executionHandler, healthHandler)
 
 	// Setup HTTP server
 	srv := &http.Server{
@@ -97,6 +113,14 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Shutdown tracing
+	if tracingManager != nil {
+		if err := tracingManager.Shutdown(ctx); err != nil {
+			logger.Error("Failed to shutdown tracing", zap.Error(err))
+		}
+	}
+
+	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
@@ -104,39 +128,43 @@ func main() {
 	logger.Info("Server exited")
 }
 
-func initLogger(level string) (*zap.Logger, error) {
-	var cfg zap.Config
-	if level == "debug" {
-		cfg = zap.NewDevelopmentConfig()
-	} else {
-		cfg = zap.NewProductionConfig()
+func initStructuredLogger(cfg *config.Config) (*observability.StructuredLogger, error) {
+	loggingConfig := observability.LoggingConfig{
+		Level:               cfg.LogLevel,
+		Format:              cfg.Observability.LogFormat,
+		EnableCaller:        cfg.Observability.LogEnableCaller,
+		EnableStacktrace:    cfg.Observability.LogEnableStacktrace,
+		Development:         cfg.Observability.LogDevelopment,
+		DisableSampling:     cfg.Observability.LogDisableSampling,
+		CorrelationIDHeader: cfg.Observability.LogCorrelationHeader,
+		InitialFields: map[string]interface{}{
+			"service":     "globeco-allocation-service",
+			"version":     "1.0.0",
+			"environment": "production",
+		},
 	}
 
-	switch level {
-	case "debug":
-		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-	case "info":
-		cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
-	case "warn":
-		cfg.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
-	case "error":
-		cfg.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
-	default:
-		cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
-	}
-
-	return cfg.Build()
+	return observability.NewStructuredLogger(loggingConfig)
 }
 
-func setupRouter(cfg *config.Config, logger *zap.Logger, executionHandler *handler.ExecutionHandler, healthHandler *handler.HealthHandler) *chi.Mux {
+func setupRouterWithObservability(
+	cfg *config.Config,
+	structuredLogger *observability.StructuredLogger,
+	metrics *observability.BusinessMetrics,
+	executionHandler *handler.ExecutionHandler,
+	healthHandler *handler.HealthHandler,
+) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Middleware
+	// Core middleware
 	r.Use(middleware.RequestID)
-	r.Use(internalMiddleware.Logger(logger))
+	r.Use(structuredLogger.CorrelationIDMiddleware())
+	r.Use(internalMiddleware.Logger(structuredLogger.Logger()))
 	r.Use(middleware.Recoverer)
 	r.Use(internalMiddleware.CORS())
-	if cfg.MetricsEnabled {
+
+	// Metrics middleware
+	if cfg.Observability.MetricsEnabled {
 		r.Use(internalMiddleware.Metrics())
 	}
 
@@ -145,8 +173,12 @@ func setupRouter(cfg *config.Config, logger *zap.Logger, executionHandler *handl
 	r.Get("/readyz", healthHandler.Readiness)
 
 	// Metrics endpoint
-	if cfg.MetricsEnabled {
-		r.Handle("/metrics", internalMiddleware.MetricsHandler())
+	if cfg.Observability.MetricsEnabled {
+		metricsPath := cfg.Observability.MetricsPath
+		if metricsPath == "" {
+			metricsPath = "/metrics"
+		}
+		r.Handle(metricsPath, internalMiddleware.MetricsHandler())
 	}
 
 	// API routes

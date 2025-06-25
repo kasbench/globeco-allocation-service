@@ -1,0 +1,117 @@
+groups:
+  - name: allocation_service_alerts
+    rules:
+      # Service availability alerts
+      - alert: AllocationServiceDown
+        expr: up{job="globeco-allocation-service"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Allocation Service is down"
+          description: "The Allocation Service has been down for more than 30 seconds."
+
+      # High error rate alerts
+      - alert: HighExecutionErrorRate
+        expr: rate(allocations_executions_errored_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High execution error rate"
+          description: "Execution error rate is {{ $value }} errors per second for more than 2 minutes."
+
+      - alert: TradeServiceErrorRate
+        expr: rate(allocations_trade_service_errors_total[5m]) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Trade Service error rate"
+          description: "Trade Service error rate is {{ $value }} errors per second."
+
+      # Performance alerts
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="globeco-allocation-service"}[5m])) > 2.0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time"
+          description: "95th percentile response time is {{ $value }}s for more than 3 minutes."
+
+      - alert: DatabaseLatencyHigh
+        expr: histogram_quantile(0.95, rate(allocations_database_operation_duration_seconds_bucket[5m])) > 1.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database latency"
+          description: "95th percentile database operation latency is {{ $value }}s."
+
+      # Portfolio processing alerts
+      - alert: PortfolioCLIFailures
+        expr: rate(allocations_portfolio_cli_invocations_total{status="error"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Portfolio CLI failures detected"
+          description: "Portfolio CLI is failing at {{ $value }} failures per second."
+
+      - alert: FileGenerationFailures
+        expr: rate(allocations_portfolio_files_generated_total{status="error"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "File generation failures"
+          description: "Portfolio file generation is failing at {{ $value }} failures per second."
+
+      # Batch processing alerts
+      - alert: BatchConflicts
+        expr: rate(allocations_batch_conflicts_total[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High batch conflict rate"
+          description: "Batch conflicts occurring at {{ $value }} conflicts per second."
+
+      # Resource alerts
+      - alert: MemoryUsageHigh
+        expr: (process_resident_memory_bytes{job="globeco-allocation-service"} / 1024 / 1024) > 512
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Process memory usage is {{ $value }}MB."
+
+      - alert: DatabaseConnectionsHigh
+        expr: allocations_database_connections_active > 90
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database connection count"
+          description: "Database connections: {{ $value }} (threshold: 90)."
+
+      # Business logic alerts
+      - alert: LargeFileSizes
+        expr: histogram_quantile(0.95, rate(allocations_file_size_bytes_bucket[10m])) > 50000000
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Large portfolio files being generated"
+          description: "95th percentile file size is {{ $value | humanize }}B."
+
+      - alert: SlowBatchProcessing
+        expr: histogram_quantile(0.95, rate(allocations_batch_processing_duration_seconds_bucket[5m])) > 60
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow batch processing"
+          description: "95th percentile batch processing time is {{ $value }}s." 
