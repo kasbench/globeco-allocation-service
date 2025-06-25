@@ -571,3 +571,50 @@ FodyWeavers.xsd
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application specific
+/main
+/globeco-allocation-service
+*.log
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts
+/bin/
+/dist/
+/build/
+
+# Database files
+*.db
+*.sqlite
+
+# Docker
+.dockerignore
+
+# Kubernetes secrets
+k8s/secrets/
+
