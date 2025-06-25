@@ -152,10 +152,10 @@ func setupRouter(cfg *config.Config, logger *zap.Logger, executionHandler *handl
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/executions", func(r chi.Router) {
-			r.Get("/", executionHandler.List)
-			r.Post("/", executionHandler.CreateBatch)
-			r.Get("/{id}", executionHandler.GetByID)
-			r.Post("/send", executionHandler.Send)
+			r.Get("/", executionHandler.GetExecutions)
+			r.Post("/", executionHandler.CreateExecutions)
+			r.Get("/{id}", executionHandler.GetExecution)
+			r.Post("/send", executionHandler.SendExecutions)
 		})
 	})
 

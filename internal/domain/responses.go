@@ -114,3 +114,16 @@ type TradeServiceDestination struct {
 	Description  string `json:"description"`
 	Version      int    `json:"version"`
 }
+
+// ErrorResponse represents a standardized API error response
+type ErrorResponse struct {
+	Message   string `json:"message"`
+	Status    int    `json:"status"`
+	Timestamp string `json:"timestamp"`
+	Details   string `json:"details,omitempty"`
+}
+
+// GetCurrentTimestamp returns the current timestamp in RFC3339 format
+func GetCurrentTimestamp() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
