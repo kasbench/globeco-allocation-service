@@ -26,6 +26,24 @@ type BatchCreateResponse struct {
 	Results        []ExecutionResult `json:"results"`
 }
 
+// CalculateTotals updates the count fields based on the results
+func (r *BatchCreateResponse) CalculateTotals() {
+	r.ProcessedCount = 0
+	r.SkippedCount = 0
+	r.ErrorCount = 0
+
+	for _, result := range r.Results {
+		switch result.Status {
+		case "created":
+			r.ProcessedCount++
+		case "skipped":
+			r.SkippedCount++
+		case "error":
+			r.ErrorCount++
+		}
+	}
+}
+
 // ExecutionResult represents the result of processing a single execution
 type ExecutionResult struct {
 	ExecutionServiceID int    `json:"executionServiceId"`

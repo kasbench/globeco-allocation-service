@@ -100,3 +100,34 @@ func (e *Execution) ToDTO() ExecutionDTO {
 		Version:            e.Version,
 	}
 }
+
+// ToExecution converts an ExecutionPostDTO to Execution domain model
+func (dto *ExecutionPostDTO) ToExecution() Execution {
+	now := time.Now()
+
+	// Calculate trade date in US Eastern Time
+	loc, _ := time.LoadLocation("America/New_York")
+	tradeDate := dto.SentTimestamp.In(loc).Truncate(24 * time.Hour)
+
+	return Execution{
+		ExecutionServiceID:   dto.ExecutionServiceID,
+		IsOpen:               dto.IsOpen,
+		ExecutionStatus:      dto.ExecutionStatus,
+		TradeType:            dto.TradeType,
+		Destination:          dto.Destination,
+		TradeDate:            tradeDate,
+		SecurityID:           dto.SecurityID,
+		Ticker:               dto.Ticker,
+		PortfolioID:          nil, // Will be set by business logic
+		Quantity:             dto.Quantity,
+		LimitPrice:           dto.LimitPrice,
+		ReceivedTimestamp:    dto.ReceivedTimestamp,
+		SentTimestamp:        dto.SentTimestamp,
+		LastFillTimestamp:    dto.LastFillTimestamp,
+		QuantityFilled:       dto.QuantityFilled,
+		TotalAmount:          dto.TotalAmount,
+		AveragePrice:         dto.AveragePrice,
+		ReadyToSendTimestamp: now,
+		Version:              1,
+	}
+}
