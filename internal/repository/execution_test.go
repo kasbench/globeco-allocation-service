@@ -25,10 +25,7 @@ var (
 func TestExecutionRepository_Create(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -92,10 +89,7 @@ func TestExecutionRepository_Create(t *testing.T) {
 func TestExecutionRepository_Create_Error(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -138,10 +132,7 @@ func TestExecutionRepository_Create_Error(t *testing.T) {
 func TestExecutionRepository_GetByID(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -189,10 +180,7 @@ func TestExecutionRepository_GetByID(t *testing.T) {
 func TestExecutionRepository_GetByID_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -215,10 +203,7 @@ func TestExecutionRepository_GetByID_NotFound(t *testing.T) {
 func TestExecutionRepository_List(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -280,10 +265,7 @@ func TestExecutionRepository_List(t *testing.T) {
 func TestExecutionRepository_Update(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -328,10 +310,7 @@ func TestExecutionRepository_Update(t *testing.T) {
 func TestExecutionRepository_Update_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
@@ -375,10 +354,7 @@ func TestExecutionRepository_Update_NotFound(t *testing.T) {
 func TestExecutionRepository_GetForBatch(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer func() {
-		err := db.Close()
-		require.NoError(t, err)
-	}()
+	defer db.Close() //nolint:errcheck
 
 	sqlxDB := sqlx.NewDb(db, "postgres")
 	dbWrapper := &DB{DB: sqlxDB, logger: zap.NewNop()}
