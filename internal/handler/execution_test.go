@@ -167,7 +167,10 @@ func (h *TestableExecutionHandler) SendExecutions(w http.ResponseWriter, r *http
 func (h *TestableExecutionHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		// In tests, it's appropriate to fail loudly
+		panic("failed to encode JSON response: " + err.Error())
+	}
 }
 
 func (h *TestableExecutionHandler) writeErrorResponse(w http.ResponseWriter, statusCode int, message string, err error) {

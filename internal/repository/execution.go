@@ -45,7 +45,11 @@ func (r *ExecutionRepository) Create(ctx context.Context, execution *domain.Exec
 		r.logger.Error("Failed to create execution", zap.Error(err))
 		return fmt.Errorf("failed to create execution: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Error("failed to close rows", zap.Error(err))
+		}
+	}()
 
 	if rows.Next() {
 		if err := rows.Scan(&execution.ID); err != nil {

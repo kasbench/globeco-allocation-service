@@ -56,7 +56,11 @@ func (r *BatchHistoryRepository) Create(ctx context.Context, batchHistory *domai
 		r.logger.Error("Failed to create batch history", zap.Error(err))
 		return fmt.Errorf("failed to create batch history: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Error("failed to close rows", zap.Error(err))
+		}
+	}()
 
 	if rows.Next() {
 		if err := rows.Scan(&batchHistory.ID); err != nil {

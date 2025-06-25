@@ -34,7 +34,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize structured logger: %v", err)
 	}
-	defer structuredLogger.Sync()
+	defer func() {
+		if err := structuredLogger.Sync(); err != nil {
+			log.Printf("Failed to sync logger: %v", err)
+		}
+	}()
 
 	logger := structuredLogger.Logger()
 	logger.Info("Starting Allocation Service",
@@ -60,7 +64,11 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("Failed to close database", zap.Error(err))
+		}
+	}()
 
 	// Initialize repositories
 	executionRepo := repository.NewExecutionRepository(db, logger)

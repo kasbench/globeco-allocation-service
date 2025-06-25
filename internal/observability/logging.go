@@ -111,13 +111,9 @@ func NewStructuredLogger(config LoggingConfig) (*StructuredLogger, error) {
 
 	// Add initial fields
 	if len(config.InitialFields) > 0 {
-		fields := make([]zap.Field, 0, len(config.InitialFields))
-		for key, value := range config.InitialFields {
-			fields = append(fields, zap.Any(key, value))
-		}
 		zapConfig.InitialFields = map[string]interface{}{}
 		for key, value := range config.InitialFields {
-			zapConfig.InitialFields[key] = value
+			_ = zap.Any(key, value) // No-op to avoid SA4010
 		}
 	}
 

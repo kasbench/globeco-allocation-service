@@ -53,7 +53,11 @@ func (s *FileGeneratorService) GeneratePortfolioAccountingFile(ctx context.Conte
 	if err != nil {
 		return "", fmt.Errorf("failed to create file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			s.logger.Error("failed to close file", zap.Error(err))
+		}
+	}()
 
 	// Write CSV header
 	header := "portfolio_id,security_id,source_id,transaction_type,quantity,price,transaction_date\n"

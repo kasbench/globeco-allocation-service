@@ -19,7 +19,10 @@ func TestFileGeneratorService_GeneratePortfolioAccountingFile(t *testing.T) {
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)
@@ -105,7 +108,10 @@ func TestFileGeneratorService_GeneratePortfolioAccountingFile_EmptyExecutions(t 
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator_empty")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)
@@ -125,7 +131,10 @@ func TestFileGeneratorService_GeneratePortfolioAccountingFile_WithCSVEscaping(t 
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator_escape")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)
@@ -194,7 +203,10 @@ func TestFileGeneratorService_CleanupFile(t *testing.T) {
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator_cleanup")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)
@@ -220,7 +232,10 @@ func TestFileGeneratorService_CleanupFile_CleanupDisabled(t *testing.T) {
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator_no_cleanup")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)
@@ -246,7 +261,10 @@ func TestFileGeneratorService_CleanupFile_NonExistentFile(t *testing.T) {
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator_cleanup_missing")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)
@@ -263,7 +281,10 @@ func TestFileGeneratorService_FilenameGeneration(t *testing.T) {
 	// Create temporary directory for test
 	tempDir, err := os.MkdirTemp("", "test_file_generator_filename")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		err := os.RemoveAll(tempDir)
+		require.NoError(t, err)
+	}()
 
 	logger := zap.NewNop()
 	generator := NewFileGeneratorService(tempDir, logger)

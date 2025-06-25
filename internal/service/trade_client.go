@@ -119,7 +119,11 @@ func (c *TradeServiceClient) executeRequest(ctx context.Context, method, url str
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.Error("failed to close response body", zap.Error(err))
+		}
+	}()
 
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
