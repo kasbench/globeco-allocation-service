@@ -2,19 +2,143 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: allocation-service-config
+  labels:
+    app: globeco-allocation-service
+    component: configuration
 data:
+  # Application configuration
   PORT: "8089"
   LOG_LEVEL: "info"
+  
+  # Database configuration
   DATABASE_HOST: "globeco-allocation-service-postgresql"
   DATABASE_PORT: "5432"
   DATABASE_NAME: "postgres"
   DATABASE_USER: "postgres"
-  DATABASE_SSL_MODE: "disable"
+  DATABASE_SSL_MODE: "require"  # Changed to require for production
+  
+  # External service configuration
   TRADE_SERVICE_URL: "http://globeco-trade-service:8082"
+  
+  # File system configuration
   OUTPUT_DIR: "/usr/local/share/files"
-  CLI_COMMAND: "docker run --rm -v /tmp/portfolio-files:/data --network host globeco-portfolio-cli:latest process --file /data/transactions.csv --output-dir /data"
+  CLI_COMMAND: "kubectl run --rm -i --tty portfolio-cli --image=globeco-portfolio-cli:latest --restart=Never -- process --file /data/transactions.csv --output-dir /data"
+  
+  # Feature flags
   METRICS_ENABLED: "true"
   TRACING_ENABLED: "true"
+  FILE_CLEANUP_ENABLED: "false"
+  
+  # Retry configuration
   RETRY_MAX_ATTEMPTS: "3"
   RETRY_BASE_DELAY_MS: "1000"
-  FILE_CLEANUP_ENABLED: "false" 
+  
+  # Observability configuration
+  OBSERVABILITY_TRACING_ENABLED: "true"
+  OBSERVABILITY_TRACING_SAMPLING_RATIO: "1.0"
+  OBSERVABILITY_METRICS_ENABLED: "true"
+  OBSERVABILITY_METRICS_PATH: "/metrics"
+  OBSERVABILITY_LOG_FORMAT: "json"
+  OBSERVABILITY_LOG_ENABLE_CALLER: "true"
+  OBSERVABILITY_LOG_ENABLE_STACKTRACE: "true"
+  OBSERVABILITY_LOG_DEVELOPMENT: "false"
+  OBSERVABILITY_LOG_DISABLE_SAMPLING: "false"
+  OBSERVABILITY_LOG_CORRELATION_HEADER: "X-Correlation-ID"
+---
+# Development-specific configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: allocation-service-config-dev
+  labels:
+    app: globeco-allocation-service
+    component: configuration
+    environment: development
+data:
+  # Application configuration
+  PORT: "8089"
+  LOG_LEVEL: "debug"
+  
+  # Database configuration
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "allocation_db"
+  DATABASE_USER: "postgres"
+  DATABASE_SSL_MODE: "disable"
+  
+  # External service configuration
+  TRADE_SERVICE_URL: "http://trade-service:8082"
+  
+  # File system configuration
+  OUTPUT_DIR: "/usr/local/share/files"
+  CLI_COMMAND: "echo 'Mock CLI command executed for development'"
+  
+  # Feature flags
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  FILE_CLEANUP_ENABLED: "false"
+  
+  # Retry configuration
+  RETRY_MAX_ATTEMPTS: "2"
+  RETRY_BASE_DELAY_MS: "500"
+  
+  # Observability configuration (more verbose for development)
+  OBSERVABILITY_TRACING_ENABLED: "true"
+  OBSERVABILITY_TRACING_SAMPLING_RATIO: "1.0"
+  OBSERVABILITY_METRICS_ENABLED: "true"
+  OBSERVABILITY_METRICS_PATH: "/metrics"
+  OBSERVABILITY_LOG_FORMAT: "json"
+  OBSERVABILITY_LOG_ENABLE_CALLER: "true"
+  OBSERVABILITY_LOG_ENABLE_STACKTRACE: "true"
+  OBSERVABILITY_LOG_DEVELOPMENT: "true"
+  OBSERVABILITY_LOG_DISABLE_SAMPLING: "true"
+  OBSERVABILITY_LOG_CORRELATION_HEADER: "X-Correlation-ID"
+---
+# Production-specific configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: allocation-service-config-prod
+  labels:
+    app: globeco-allocation-service
+    component: configuration
+    environment: production
+data:
+  # Application configuration
+  PORT: "8089"
+  LOG_LEVEL: "warn"
+  
+  # Database configuration
+  DATABASE_HOST: "globeco-allocation-service-postgresql.database.svc.cluster.local"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "allocation_production"
+  DATABASE_USER: "allocation_user"
+  DATABASE_SSL_MODE: "require"
+  
+  # External service configuration
+  TRADE_SERVICE_URL: "https://globeco-trade-service.services.svc.cluster.local:8082"
+  
+  # File system configuration
+  OUTPUT_DIR: "/usr/local/share/files"
+  CLI_COMMAND: "kubectl run --rm -i --tty portfolio-cli --image=globeco-portfolio-cli:1.0.0 --restart=Never --limits=cpu=500m,memory=512Mi -- process --file /data/transactions.csv --output-dir /data"
+  
+  # Feature flags
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  FILE_CLEANUP_ENABLED: "true"
+  
+  # Retry configuration
+  RETRY_MAX_ATTEMPTS: "5"
+  RETRY_BASE_DELAY_MS: "2000"
+  
+  # Observability configuration (less verbose for production)
+  OBSERVABILITY_TRACING_ENABLED: "true"
+  OBSERVABILITY_TRACING_SAMPLING_RATIO: "0.1"  # 10% sampling in production
+  OBSERVABILITY_METRICS_ENABLED: "true"
+  OBSERVABILITY_METRICS_PATH: "/metrics"
+  OBSERVABILITY_LOG_FORMAT: "json"
+  OBSERVABILITY_LOG_ENABLE_CALLER: "false"
+  OBSERVABILITY_LOG_ENABLE_STACKTRACE: "false"
+  OBSERVABILITY_LOG_DEVELOPMENT: "false"
+  OBSERVABILITY_LOG_DISABLE_SAMPLING: "false"
+  OBSERVABILITY_LOG_CORRELATION_HEADER: "X-Correlation-ID" 

@@ -5,8 +5,15 @@ metadata:
   labels:
     app: globeco-allocation-service
     version: v1
+    component: backend
+    part-of: globeco-suite
 spec:
-  replicas: 2
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app: globeco-allocation-service
@@ -15,67 +22,168 @@ spec:
       labels:
         app: globeco-allocation-service
         version: v1
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: allocation-service-sa
       containers:
       - name: allocation-service
-        image: globeco-allocation-service:latest
+        image: globeco-allocation-service:1.0.0
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8089
           name: http
+          protocol: TCP
         env:
         - name: PORT
-          value: "8089"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: PORT
         - name: LOG_LEVEL
-          value: "info"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: LOG_LEVEL
         - name: DATABASE_HOST
-          value: "globeco-allocation-service-postgresql"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: DATABASE_HOST
         - name: DATABASE_PORT
-          value: "5432"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: DATABASE_PORT
         - name: DATABASE_NAME
-          value: "postgres"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: DATABASE_NAME
         - name: DATABASE_USER
-          value: "postgres"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: DATABASE_USER
         - name: DATABASE_PASSWORD
           valueFrom:
             secretKeyRef:
               name: allocation-service-secrets
               key: database-password
+        - name: DATABASE_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: DATABASE_SSL_MODE
         - name: TRADE_SERVICE_URL
-          value: "http://globeco-trade-service:8082"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: TRADE_SERVICE_URL
         - name: OUTPUT_DIR
-          value: "/usr/local/share/files"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: OUTPUT_DIR
         - name: CLI_COMMAND
-          value: "docker run --rm -v /tmp/portfolio-files:/data --network host globeco-portfolio-cli:latest process --file /data/transactions.csv --output-dir /data"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: CLI_COMMAND
         - name: METRICS_ENABLED
-          value: "true"
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: METRICS_ENABLED
         - name: TRACING_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: TRACING_ENABLED
+        - name: RETRY_MAX_ATTEMPTS
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: RETRY_MAX_ATTEMPTS
+        - name: RETRY_BASE_DELAY_MS
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: RETRY_BASE_DELAY_MS
+        - name: FILE_CLEANUP_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: allocation-service-config
+              key: FILE_CLEANUP_ENABLED
+        # Observability configuration
+        - name: OBSERVABILITY_TRACING_ENABLED
           value: "true"
+        - name: OBSERVABILITY_TRACING_OTLP_ENDPOINT
+          value: "http://jaeger-collector:14268/api/traces"
+        - name: OBSERVABILITY_METRICS_ENABLED
+          value: "true"
+        - name: OBSERVABILITY_LOG_FORMAT
+          value: "json"
+        # Pod metadata for correlation
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         volumeMounts:
         - name: shared-files
           mountPath: /usr/local/share/files
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /healthz
             port: http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
           failureThreshold: 3
+          successThreshold: 1
         readinessProbe:
           httpGet:
             path: /readyz
             port: http
-          initialDelaySeconds: 5
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /readyz
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
-          failureThreshold: 3
+          failureThreshold: 30
+          successThreshold: 1
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "256Mi"
+            cpu: "200m"
+            ephemeral-storage: "1Gi"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "1Gi"
+            cpu: "1000m"
+            ephemeral-storage: "2Gi"
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
@@ -85,9 +193,41 @@ spec:
           capabilities:
             drop:
             - ALL
+          seccompProfile:
+            type: RuntimeDefault
       volumes:
       - name: shared-files
         persistentVolumeClaim:
           claimName: shared-files-pvc
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
       securityContext:
-        fsGroup: 1001 
+        fsGroup: 1001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      # Anti-affinity to spread pods across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - globeco-allocation-service
+              topologyKey: kubernetes.io/hostname
+      # Node selection (optional - for production environments)
+      # nodeSelector:
+      #   node-type: worker
+      # tolerations:
+      # - key: "dedicated"
+      #   operator: "Equal"
+      #   value: "allocation-service"
+      #   effect: "NoSchedule" 

@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # Allocation Service
+  allocation-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "8089:8089"
+    environment:
+      - PORT=8089
+      - LOG_LEVEL=debug
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=allocation_db
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres123
+      - DATABASE_SSL_MODE=disable
+      - TRADE_SERVICE_URL=http://trade-service:8082
+      - OUTPUT_DIR=/usr/local/share/files
+      - CLI_COMMAND=echo "Mock CLI command executed"
+      - METRICS_ENABLED=true
+      - TRACING_ENABLED=true
+      - RETRY_MAX_ATTEMPTS=3
+      - RETRY_BASE_DELAY_MS=1000
+      - FILE_CLEANUP_ENABLED=false
+    volumes:
+      - shared-files:/usr/local/share/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - globeco-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8089/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=allocation_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - globeco-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d allocation_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Mock Trade Service (for testing)
+  trade-service:
+    image: nginx:alpine
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./docker/mock-trade-service.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - globeco-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - globeco-network
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/allocation-service.json:ro
+    networks:
+      - globeco-network
+    depends_on:
+      - prometheus
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - globeco-network
+
+volumes:
+  postgres-data:
+    driver: local
+  shared-files:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  globeco-network:
+    driver: bridge 

@@ -4,6 +4,12 @@ metadata:
   name: globeco-allocation-service
   labels:
     app: globeco-allocation-service
+    component: backend
+    service.type: primary
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8089"
+    prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   ports:
@@ -11,5 +17,46 @@ spec:
     targetPort: 8089
     protocol: TCP
     name: http
+  selector:
+    app: globeco-allocation-service
+---
+# Headless service for StatefulSet-like behavior if needed
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-allocation-service-headless
+  labels:
+    app: globeco-allocation-service
+    component: backend
+    service.type: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 8089
+    targetPort: 8089
+    protocol: TCP
+    name: http
+  selector:
+    app: globeco-allocation-service
+---
+# External service for development/testing (NodePort)
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-allocation-service-external
+  labels:
+    app: globeco-allocation-service
+    component: backend
+    service.type: external
+    environment: development
+spec:
+  type: NodePort
+  ports:
+  - port: 8089
+    targetPort: 8089
+    protocol: TCP
+    name: http
+    nodePort: 30089  # External access on port 30089
   selector:
     app: globeco-allocation-service 

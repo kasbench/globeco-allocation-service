@@ -1,0 +1,116 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: globeco-allocation-service-ingress
+  labels:
+    app: globeco-allocation-service
+    component: ingress
+  annotations:
+    # nginx ingress controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+    nginx.ingress.kubernetes.io/rate-limit-requests-per-minute: "300"
+    
+    # CORS configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Content-Type, Authorization"
+    
+    # Security headers
+    nginx.ingress.kubernetes.io/custom-http-errors: "404,500,502,503,504"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    
+    # Health checks
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/upstream-health-check: "true"
+    
+    # Cert-manager for automatic TLS
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+    # Additional annotations for production
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - allocation-service.globeco.local
+    - api.globeco.local
+    secretName: allocation-service-tls
+  rules:
+  # Internal service access
+  - host: allocation-service.globeco.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: globeco-allocation-service
+            port:
+              number: 8089
+  # API Gateway style access
+  - host: api.globeco.local
+    http:
+      paths:
+      - path: /allocation
+        pathType: Prefix
+        backend:
+          service:
+            name: globeco-allocation-service
+            port:
+              number: 8089
+      # Health checks available at root level
+      - path: /allocation/healthz
+        pathType: Exact
+        backend:
+          service:
+            name: globeco-allocation-service
+            port:
+              number: 8089
+      - path: /allocation/readyz
+        pathType: Exact
+        backend:
+          service:
+            name: globeco-allocation-service
+            port:
+              number: 8089
+      - path: /allocation/metrics
+        pathType: Exact
+        backend:
+          service:
+            name: globeco-allocation-service
+            port:
+              number: 8089
+---
+# Development/staging ingress without TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: globeco-allocation-service-dev-ingress
+  labels:
+    app: globeco-allocation-service
+    component: ingress
+    environment: development
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: allocation-service-dev.globeco.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: globeco-allocation-service
+            port:
+              number: 8089 

@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: allocation-service-sa
+  labels:
+    app: globeco-allocation-service
+    component: backend
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: allocation-service-role
+  labels:
+    app: globeco-allocation-service
+rules:
+# Minimal permissions for service operation
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+  resourceNames: ["allocation-service-config"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["allocation-service-secrets"]
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get"]
+  resourceNames: ["shared-files-pvc"]
+# Allow reading pods for metrics/health checking
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+  resourceNames: ["globeco-allocation-service-*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: allocation-service-rolebinding
+  labels:
+    app: globeco-allocation-service
+subjects:
+- kind: ServiceAccount
+  name: allocation-service-sa
+  namespace: default
+roleRef:
+  kind: Role
+  name: allocation-service-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Network Policy for security (optional but recommended)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allocation-service-netpol
+  labels:
+    app: globeco-allocation-service
+spec:
+  podSelector:
+    matchLabels:
+      app: globeco-allocation-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from other services in the same namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: default
+    ports:
+    - protocol: TCP
+      port: 8089
+  # Allow traffic from monitoring namespace (if using separate namespace)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8089
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow database connections
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow Trade Service connections
+  - to:
+    - podSelector:
+        matchLabels:
+          app: globeco-trade-service
+    ports:
+    - protocol: TCP
+      port: 8082
+  # Allow external HTTPS traffic (for observability endpoints)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 14268  # Jaeger collector 
