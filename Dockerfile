@@ -41,6 +41,9 @@ COPY --from=builder /app/main /main
 # Copy migrations
 COPY --from=builder /app/migrations /migrations
 
+# Copy OpenAPI spec
+COPY --from=builder /app/openapi.yaml /openapi.yaml
+
 # Create directory structure for non-root user
 # Note: Using scratch means we need to create these at runtime
 
@@ -76,7 +79,10 @@ WORKDIR /app
 COPY --from=builder /app/main .
 
 # Copy migrations
-COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/migrations /migrations
+
+# Copy OpenAPI spec
+COPY --from=builder /app/openapi.yaml /openapi.yaml
 
 # Create the output directory with proper permissions
 RUN mkdir -p /usr/local/share/files && \

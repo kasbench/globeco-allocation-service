@@ -93,6 +93,45 @@ func main() {
 	// Setup router with observability middleware
 	r := setupRouterWithObservability(cfg, structuredLogger, businessMetrics, executionHandler, healthHandler)
 
+	// Serve OpenAPI spec (YAML)
+	r.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		http.ServeFile(w, r, "openapi.yaml")
+	})
+
+	// Serve Swagger UI
+	r.Get("/swagger-ui/*", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/swagger-ui/" || r.URL.Path == "/swagger-ui" {
+			http.Redirect(w, r, "/swagger-ui/index.html", http.StatusFound)
+			return
+		}
+		if r.URL.Path == "/swagger-ui/index.html" {
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Swagger UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.12/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.17.12/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = function() {
+      window.ui = SwaggerUIBundle({
+        url: window.location.protocol + '//' + window.location.hostname + ':8089/openapi.yaml',
+        dom_id: '#swagger-ui',
+      });
+    };
+  </script>
+</body>
+</html>`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
 	// Setup HTTP server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

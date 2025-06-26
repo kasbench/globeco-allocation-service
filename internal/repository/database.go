@@ -3,12 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/kasbench/globeco-allocation-service/internal/config"
 )
 
@@ -35,6 +40,36 @@ func NewPostgresDB(cfg config.Database) (*DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
+
+	// --- Debug: List /migrations directory ---
+	files, err := ioutil.ReadDir("/migrations")
+	if err != nil {
+		log.Printf("[DEBUG] Could not read /migrations: %v", err)
+	} else {
+		log.Printf("[DEBUG] Listing /migrations:")
+		for _, f := range files {
+			log.Printf("[DEBUG]   %s", f.Name())
+		}
+	}
+	// --- End debug ---
+
+	// --- Automatic migration ---
+	migrationsPath := "/migrations"
+	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create migration driver: %w", err)
+	}
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://"+migrationsPath,
+		"postgres", driver,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize migrate: %w", err)
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return nil, fmt.Errorf("database migration failed: %w", err)
+	}
+	// --- End migration ---
 
 	return &DB{
 		DB:     db,
