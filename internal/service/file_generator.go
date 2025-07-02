@@ -91,8 +91,8 @@ func (s *FileGeneratorService) executionToCSVLine(execution domain.Execution) st
 	// Generate source_id as "AC" + execution.id
 	sourceID := fmt.Sprintf("AC%d", execution.ID)
 
-	// Format trade date as YYYY-MM-DD
-	tradeDate := execution.TradeDate.Format("2006-01-02")
+	// Format trade date as YYYYMMDD
+	tradeDate := execution.TradeDate.Format("20060102")
 
 	// Build CSV line
 	fields := []string{

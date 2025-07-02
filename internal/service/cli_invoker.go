@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -19,6 +20,10 @@ type CLIInvokerService struct {
 
 // NewCLIInvokerService creates a new CLI invoker service
 func NewCLIInvokerService(cliCommand string, logger *zap.Logger) *CLIInvokerService {
+	home, err := os.UserHomeDir()
+	if err == nil && strings.Contains(cliCommand, "{home}") {
+		cliCommand = strings.ReplaceAll(cliCommand, "{home}", home)
+	}
 	return &CLIInvokerService{
 		cliCommand: cliCommand,
 		logger:     logger,
@@ -31,19 +36,20 @@ func (s *CLIInvokerService) SetTimeout(timeout time.Duration) {
 	s.timeout = timeout
 }
 
-// InvokePortfolioAccountingCLI executes the Portfolio Accounting CLI with the given file
-func (s *CLIInvokerService) InvokePortfolioAccountingCLI(ctx context.Context, filename string) error {
+// InvokePortfolioAccountingCLI executes the Portfolio Accounting CLI with the given file and output directory
+func (s *CLIInvokerService) InvokePortfolioAccountingCLI(ctx context.Context, filename string, outputDir string) error {
 	if s.cliCommand == "" {
 		return fmt.Errorf("CLI command not configured")
 	}
 
-	// Replace placeholder in command with actual filename
-	command := strings.ReplaceAll(s.cliCommand, "your-transactions.csv", filename)
-	command = strings.ReplaceAll(command, "/data/your-transactions.csv", fmt.Sprintf("/data/%s", filename))
+	// Replace placeholders in command
+	command := strings.ReplaceAll(s.cliCommand, "{filename}", filename)
+	command = strings.ReplaceAll(command, "{output_dir}", outputDir)
 
 	s.logger.Info("Invoking Portfolio Accounting CLI",
 		zap.String("command", command),
-		zap.String("filename", filename))
+		zap.String("filename", filename),
+		zap.String("outputDir", outputDir))
 
 	// Create context with timeout
 	cmdCtx, cancel := context.WithTimeout(ctx, s.timeout)

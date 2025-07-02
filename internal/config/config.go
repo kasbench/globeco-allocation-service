@@ -93,8 +93,11 @@ func setDefaults(v *viper.Viper) {
 
 	// External service defaults
 	v.SetDefault("trade_service_url", "http://globeco-trade-service:8082")
-	v.SetDefault("output_dir", "/usr/local/share/files")
-	v.SetDefault("cli_command", "")
+	v.SetDefault("output_dir", "/data")
+	// Use {home} as a placeholder for the user's home directory; replace at runtime.
+	v.SetDefault("cli_command", "docker run --rm -v {home}/docker_data:/data --network my-network kasbench/globeco-portfolio-accounting-service-cli:latest process --file /data/{filename} --output-dir /data")
+
+	// "$HOME/docker_data:/data"
 
 	// Retry configuration defaults
 	v.SetDefault("retry_max_attempts", 3)

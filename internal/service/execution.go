@@ -303,7 +303,7 @@ func (s *ExecutionService) Send(ctx context.Context) (*domain.SendResponse, erro
 	}
 
 	// Step 5: Invoke Portfolio Accounting CLI
-	if err := s.cliInvoker.InvokePortfolioAccountingCLI(ctx, filename); err != nil {
+	if err := s.cliInvoker.InvokePortfolioAccountingCLI(ctx, filename, s.config.OutputDir); err != nil {
 		s.logger.Error("CLI invocation failed", zap.Error(err))
 		return &domain.SendResponse{
 			ProcessedCount: len(executions),

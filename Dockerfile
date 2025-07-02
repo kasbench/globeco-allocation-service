@@ -27,13 +27,10 @@ FROM builder AS tester
 RUN go test ./... -short
 
 # Final stage - minimal production image
-FROM scratch AS production
+FROM alpine:3.19 AS production
 
-# Import ca-certificates from builder stage
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# Import timezone data
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+# Install ca-certificates and timezone data (sh is included by default)
+RUN apk add --no-cache ca-certificates tzdata
 
 # Copy the binary from builder stage
 COPY --from=builder /app/main /main
@@ -44,8 +41,9 @@ COPY --from=builder /app/migrations /migrations
 # Copy OpenAPI spec
 COPY --from=builder /app/openapi.yaml /openapi.yaml
 
-# Create directory structure for non-root user
-# Note: Using scratch means we need to create these at runtime
+# Copy CA certs and timezone data
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
 # Expose port
 EXPOSE 8089
