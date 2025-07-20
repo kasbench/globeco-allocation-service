@@ -1,5 +1,10 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+
+# Build arguments for multi-arch support
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
 
 # Install git and ca-certificates for build dependencies
 RUN apk add --no-cache git ca-certificates tzdata make
@@ -16,8 +21,8 @@ RUN go mod download && go mod verify
 # Copy source code
 COPY . .
 
-# Build the application with optimizations
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+# Build the application with optimizations for target architecture
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -a -installsuffix cgo \
     -ldflags='-w -s -extldflags "-static"' \
     -o main ./cmd/server

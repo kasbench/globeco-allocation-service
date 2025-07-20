@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: allocation-service-config-dev
+  labels:
+    app: globeco-allocation-service
+    environment: development
+data:
+  # Application configuration
+  PORT: "8089"
+  LOG_LEVEL: "debug"
+  
+  # Database configuration
+  DATABASE_HOST: "globeco-allocation-service-postgresql"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "allocation_db"
+  DATABASE_USER: "postgres"
+  DATABASE_PASSWORD: ""
+  DATABASE_SSL_MODE: "disable"
+  
+  # External service configuration
+  TRADE_SERVICE_URL: "http://globeco-trade-service:8082"
+  
+  # File system configuration
+  OUTPUT_DIR: "/tmp/files"
+  CLI_COMMAND: "kubectl run --rm -i --tty portfolio-cli --image=globeco-portfolio-accounting-service-cli:latest --restart=Never -- process --file /data/transactions.csv --output-dir /data"
+  
+  # Feature flags (simplified for dev)
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  FILE_CLEANUP_ENABLED: "false"
+  
+  # Retry configuration
+  RETRY_MAX_ATTEMPTS: "2"
+  RETRY_BASE_DELAY_MS: "500"
+  
+  # Observability configuration
+  OBSERVABILITY_LOG_FORMAT: "json"
+  OBSERVABILITY_LOG_DEVELOPMENT: "true"
+  OBSERVABILITY_METRICS_ENABLED: "true"
+  OBSERVABILITY_METRICS_PATH: "/metrics"
+  OBSERVABILITY_TRACING_ENABLED: "true"
+  OBSERVABILITY_TRACING_SAMPLING_RATIO: "1.0"
+  OBSERVABILITY_LOG_ENABLE_CALLER: "true"
+  OBSERVABILITY_LOG_ENABLE_STACKTRACE: "true"
+  OBSERVABILITY_LOG_DEVELOPMENT: "false"
+  OBSERVABILITY_LOG_DISABLE_SAMPLING: "false"
+  OBSERVABILITY_LOG_CORRELATION_HEADER: "X-Correlation-ID"

@@ -173,7 +173,7 @@ deploy_service() {
     cd "$PROJECT_ROOT"
     
     # Create namespace if it doesn't exist
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+    # kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
     
     # Set namespace context
     kubectl config set-context --current --namespace="$NAMESPACE"
