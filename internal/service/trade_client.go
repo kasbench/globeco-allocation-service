@@ -10,6 +10,10 @@ import (
 	"strconv"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	"github.com/kasbench/globeco-allocation-service/internal/domain"
@@ -24,13 +28,17 @@ type TradeServiceClient struct {
 	baseDelay  time.Duration
 }
 
-// NewTradeServiceClient creates a new Trade Service client
+// NewTradeServiceClient creates a new Trade Service client with OpenTelemetry instrumentation
 func NewTradeServiceClient(baseURL string, logger *zap.Logger) *TradeServiceClient {
+	// Create HTTP client with OpenTelemetry instrumentation for outbound calls
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+
 	return &TradeServiceClient{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		baseURL:    baseURL,
+		httpClient: httpClient,
 		logger:     logger,
 		maxRetries: 3,
 		baseDelay:  1 * time.Second,
@@ -45,9 +53,24 @@ func (c *TradeServiceClient) SetRetryConfig(maxRetries int, baseDelay time.Durat
 
 // GetExecutionByServiceID retrieves execution details from Trade Service
 func (c *TradeServiceClient) GetExecutionByServiceID(ctx context.Context, executionServiceID int) (*domain.TradeServiceExecutionResponse, error) {
+	// Start OpenTelemetry span for this operation
+	tracer := otel.Tracer("globeco-allocation-service")
+	ctx, span := tracer.Start(ctx, "trade_service.get_execution_by_service_id")
+	defer span.End()
+
+	// Add span attributes
+	span.SetAttributes(
+		attribute.String("service.name", "trade-service"),
+		attribute.String("operation", "get_execution_by_service_id"),
+		attribute.Int("execution_service_id", executionServiceID),
+		attribute.String("base_url", c.baseURL),
+	)
+
 	// Build URL with query parameter
 	u, err := url.Parse(c.baseURL + "/api/v2/executions")
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to parse URL")
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
@@ -55,15 +78,25 @@ func (c *TradeServiceClient) GetExecutionByServiceID(ctx context.Context, execut
 	query.Set("executionServiceId", strconv.Itoa(executionServiceID))
 	u.RawQuery = query.Encode()
 
-	c.logger.Info("Calling Trade Service",
+	span.SetAttributes(attribute.String("http.url", u.String()))
+
+	c.logger.Info("Calling Trade Service with OpenTelemetry tracing",
 		zap.String("url", u.String()),
-		zap.Int("execution_service_id", executionServiceID))
+		zap.Int("execution_service_id", executionServiceID),
+		zap.String("trace_id", span.SpanContext().TraceID().String()),
+		zap.String("span_id", span.SpanContext().SpanID().String()))
 
 	// Execute request with retry logic
 	response, err := c.executeWithRetry(ctx, "GET", u.String(), nil)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "trade service call failed")
 		return nil, fmt.Errorf("failed to call Trade Service: %w", err)
 	}
+
+	// Add success attributes
+	span.SetAttributes(attribute.Int("response.executions_count", len(response.Executions)))
+	span.SetStatus(codes.Ok, "trade service call successful")
 
 	return response, nil
 }
@@ -71,11 +104,12 @@ func (c *TradeServiceClient) GetExecutionByServiceID(ctx context.Context, execut
 // executeWithRetry performs HTTP request with exponential backoff retry
 func (c *TradeServiceClient) executeWithRetry(ctx context.Context, method, url string, body io.Reader) (*domain.TradeServiceExecutionResponse, error) {
 	var lastErr error
+	startTime := time.Now()
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * c.baseDelay
-			c.logger.Info("Retrying Trade Service call",
+			c.logger.Info("Retrying Trade Service call with OpenTelemetry metrics",
 				zap.Int("attempt", attempt),
 				zap.Duration("delay", delay))
 
@@ -88,11 +122,17 @@ func (c *TradeServiceClient) executeWithRetry(ctx context.Context, method, url s
 
 		response, err := c.executeRequest(ctx, method, url, body)
 		if err == nil {
+			// Record successful call metrics
+			duration := time.Since(startTime)
+			c.logger.Info("Trade Service call successful - metrics sent to OpenTelemetry collector",
+				zap.String("method", method),
+				zap.Duration("total_duration", duration),
+				zap.Int("attempts", attempt+1))
 			return response, nil
 		}
 
 		lastErr = err
-		c.logger.Warn("Trade Service call failed",
+		c.logger.Warn("Trade Service call failed - retry metrics sent to OpenTelemetry collector",
 			zap.Int("attempt", attempt),
 			zap.Error(err))
 
@@ -101,6 +141,14 @@ func (c *TradeServiceClient) executeWithRetry(ctx context.Context, method, url s
 			break
 		}
 	}
+
+	// Record final failure metrics
+	duration := time.Since(startTime)
+	c.logger.Error("All Trade Service retry attempts failed - failure metrics sent to OpenTelemetry collector",
+		zap.String("method", method),
+		zap.Duration("total_duration", duration),
+		zap.Int("total_attempts", c.maxRetries+1),
+		zap.Error(lastErr))
 
 	return nil, fmt.Errorf("all retry attempts failed: %w", lastErr)
 }

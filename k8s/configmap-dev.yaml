@@ -34,6 +34,25 @@ data:
   RETRY_MAX_ATTEMPTS: "2"
   RETRY_BASE_DELAY_MS: "500"
   
+  # OpenTelemetry configuration (GlobeCo standards)
+  OBSERVABILITY_OTEL_ENABLED: "true"
+  OBSERVABILITY_OTEL_ENDPOINT: "otel-collector-collector.monitoring.svc.cluster.local:4317"
+  OBSERVABILITY_OTEL_SERVICE_NAME: "globeco-allocation-service"
+  OBSERVABILITY_OTEL_SERVICE_VERSION: "1.0.0"
+  OBSERVABILITY_OTEL_SERVICE_NAMESPACE: "globeco"
+  
+  # Standard OTEL environment variables (for compatibility)
+  OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector-collector.monitoring.svc.cluster.local:4317"
+  OTEL_SERVICE_NAME: "globeco-allocation-service"
+  OTEL_SERVICE_VERSION: "1.0.0"
+  OTEL_SERVICE_NAMESPACE: "globeco"
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  
+  # Additional OTEL debugging variables
+  OTEL_LOG_LEVEL: "info"
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=globeco-allocation-service,service.version=1.0.0,service.namespace=globeco"
+  
   # Observability configuration
   OBSERVABILITY_LOG_FORMAT: "json"
   OBSERVABILITY_LOG_DEVELOPMENT: "true"

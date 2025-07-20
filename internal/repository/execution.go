@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
 	"github.com/kasbench/globeco-allocation-service/internal/domain"
@@ -27,6 +30,21 @@ func NewExecutionRepository(db *DB, logger *zap.Logger) *ExecutionRepository {
 
 // Create inserts a new execution record
 func (r *ExecutionRepository) Create(ctx context.Context, execution *domain.Execution) error {
+	// Start OpenTelemetry span for database operation
+	tracer := otel.Tracer("globeco-allocation-service")
+	ctx, span := tracer.Start(ctx, "db.execution.create")
+	defer span.End()
+
+	// Add span attributes
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "INSERT"),
+		attribute.String("db.table", "execution"),
+		attribute.Int("execution_service_id", execution.ExecutionServiceID),
+		attribute.String("trade_type", execution.TradeType),
+		attribute.String("destination", execution.Destination),
+	)
+
 	query := `
 		INSERT INTO execution (
 			execution_service_id, is_open, execution_status, trade_type, destination,
@@ -42,7 +60,12 @@ func (r *ExecutionRepository) Create(ctx context.Context, execution *domain.Exec
 
 	rows, err := r.db.NamedQueryContext(ctx, query, execution)
 	if err != nil {
-		r.logger.Error("Failed to create execution", zap.Error(err))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "database insert failed")
+		r.logger.Error("Failed to create execution with OpenTelemetry tracing", 
+			zap.Error(err),
+			zap.String("trace_id", span.SpanContext().TraceID().String()),
+			zap.String("span_id", span.SpanContext().SpanID().String()))
 		return fmt.Errorf("failed to create execution: %w", err)
 	}
 	defer func() {
@@ -53,27 +76,65 @@ func (r *ExecutionRepository) Create(ctx context.Context, execution *domain.Exec
 
 	if rows.Next() {
 		if err := rows.Scan(&execution.ID); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to scan execution ID")
 			return fmt.Errorf("failed to scan execution ID: %w", err)
 		}
 	}
 
-	r.logger.Info("Created execution", zap.Int("id", execution.ID), zap.Int("execution_service_id", execution.ExecutionServiceID))
+	// Add success attributes
+	span.SetAttributes(attribute.Int("execution.id", execution.ID))
+	span.SetStatus(codes.Ok, "execution created successfully")
+
+	r.logger.Info("Created execution with OpenTelemetry tracing", 
+		zap.Int("id", execution.ID), 
+		zap.Int("execution_service_id", execution.ExecutionServiceID),
+		zap.String("trace_id", span.SpanContext().TraceID().String()),
+		zap.String("span_id", span.SpanContext().SpanID().String()))
 	return nil
 }
 
 // GetByID retrieves an execution by ID
 func (r *ExecutionRepository) GetByID(ctx context.Context, id int) (*domain.Execution, error) {
+	// Start OpenTelemetry span for database operation
+	tracer := otel.Tracer("globeco-allocation-service")
+	ctx, span := tracer.Start(ctx, "db.execution.get_by_id")
+	defer span.End()
+
+	// Add span attributes
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "SELECT"),
+		attribute.String("db.table", "execution"),
+		attribute.Int("execution.id", id),
+	)
+
 	var execution domain.Execution
 	query := "SELECT * FROM execution WHERE id = $1"
 
 	err := r.db.GetContext(ctx, &execution, query, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			span.SetStatus(codes.Ok, "execution not found")
+			span.SetAttributes(attribute.Bool("found", false))
 			return nil, fmt.Errorf("execution not found: %d", id)
 		}
-		r.logger.Error("Failed to get execution by ID", zap.Int("id", id), zap.Error(err))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "database select failed")
+		r.logger.Error("Failed to get execution by ID with OpenTelemetry tracing", 
+			zap.Int("id", id), 
+			zap.Error(err),
+			zap.String("trace_id", span.SpanContext().TraceID().String()))
 		return nil, fmt.Errorf("failed to get execution: %w", err)
 	}
+
+	// Add success attributes
+	span.SetAttributes(
+		attribute.Bool("found", true),
+		attribute.Int("execution_service_id", execution.ExecutionServiceID),
+		attribute.String("trade_type", execution.TradeType),
+	)
+	span.SetStatus(codes.Ok, "execution retrieved successfully")
 
 	return &execution, nil
 }

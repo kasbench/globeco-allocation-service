@@ -37,6 +37,13 @@ type Database struct {
 
 // ObservabilityConfig holds observability configuration
 type ObservabilityConfig struct {
+	// OpenTelemetry configuration
+	OTELEnabled         bool   `mapstructure:"otel_enabled"`
+	OTELEndpoint        string `mapstructure:"otel_endpoint"`
+	OTELServiceName     string `mapstructure:"otel_service_name"`
+	OTELServiceVersion  string `mapstructure:"otel_service_version"`
+	OTELServiceNamespace string `mapstructure:"otel_service_namespace"`
+
 	// Tracing configuration
 	TracingEnabled       bool              `mapstructure:"tracing_enabled"`
 	TracingOTLPEndpoint  string            `mapstructure:"tracing_otlp_endpoint"`
@@ -105,6 +112,13 @@ func setDefaults(v *viper.Viper) {
 
 	// File management defaults
 	v.SetDefault("file_cleanup_enabled", false)
+
+	// OpenTelemetry defaults (GlobeCo standards)
+	v.SetDefault("observability.otel_enabled", true)
+	v.SetDefault("observability.otel_endpoint", "otel-collector-collector.monitoring.svc.cluster.local:4317")
+	v.SetDefault("observability.otel_service_name", "globeco-allocation-service")
+	v.SetDefault("observability.otel_service_version", "1.0.0")
+	v.SetDefault("observability.otel_service_namespace", "globeco")
 
 	// Observability defaults
 	v.SetDefault("observability.tracing_enabled", true)

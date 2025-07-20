@@ -45,19 +45,26 @@ func main() {
 		zap.String("version", "1.0.0"),
 		zap.Int("port", cfg.Port))
 
-	// Initialize tracing
-	tracingManager, err := observability.NewTracingManager(observability.TracingConfig{
-		Enabled:        cfg.Observability.TracingEnabled,
-		OTLPEndpoint:   cfg.Observability.TracingOTLPEndpoint,
-		SamplingRatio:  cfg.Observability.TracingSamplingRatio,
-		TracingHeaders: cfg.Observability.TracingHeaders,
+	// Initialize OpenTelemetry following GlobeCo standards
+	otelManager, err := observability.NewOTELManager(observability.OTELConfig{
+		Enabled:          cfg.Observability.OTELEnabled,
+		Endpoint:         cfg.Observability.OTELEndpoint,
+		ServiceName:      cfg.Observability.OTELServiceName,
+		ServiceVersion:   cfg.Observability.OTELServiceVersion,
+		ServiceNamespace: cfg.Observability.OTELServiceNamespace,
 	}, logger)
 	if err != nil {
-		logger.Fatal("Failed to initialize tracing", zap.Error(err))
+		logger.Fatal("Failed to initialize OpenTelemetry", zap.Error(err))
 	}
 
-	// Initialize business metrics
+	// Initialize business metrics (legacy Prometheus)
 	businessMetrics := observability.NewBusinessMetrics(logger)
+
+	// Initialize OpenTelemetry metrics manager
+	otelMetrics, err := observability.NewOTELMetricsManager(logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize OpenTelemetry metrics", zap.Error(err))
+	}
 
 	// Initialize database connection
 	db, err := repository.NewPostgresDB(cfg.Database)
@@ -91,7 +98,7 @@ func main() {
 	healthHandler := handler.NewHealthHandler(db, logger)
 
 	// Setup router with observability middleware
-	r := setupRouterWithObservability(cfg, structuredLogger, businessMetrics, executionHandler, healthHandler)
+	r := setupRouterWithObservability(cfg, structuredLogger, businessMetrics, otelMetrics, executionHandler, healthHandler)
 
 	// Serve OpenAPI spec (YAML)
 	r.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
@@ -160,10 +167,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Shutdown tracing
-	if tracingManager != nil {
-		if err := tracingManager.Shutdown(ctx); err != nil {
-			logger.Error("Failed to shutdown tracing", zap.Error(err))
+	// Shutdown OpenTelemetry
+	if otelManager != nil {
+		if err := otelManager.Shutdown(ctx); err != nil {
+			logger.Error("Failed to shutdown OpenTelemetry", zap.Error(err))
 		}
 	}
 
@@ -198,6 +205,7 @@ func setupRouterWithObservability(
 	cfg *config.Config,
 	structuredLogger *observability.StructuredLogger,
 	metrics *observability.BusinessMetrics,
+	otelMetrics *observability.OTELMetricsManager,
 	executionHandler *handler.ExecutionHandler,
 	healthHandler *handler.HealthHandler,
 ) *chi.Mux {
@@ -206,6 +214,12 @@ func setupRouterWithObservability(
 	// Core middleware
 	r.Use(middleware.RequestID)
 	r.Use(structuredLogger.CorrelationIDMiddleware())
+	
+	// OpenTelemetry tracing middleware (before logging for proper trace context)
+	if cfg.Observability.OTELEnabled {
+		r.Use(internalMiddleware.OTELTracing(cfg.Observability.OTELServiceName, structuredLogger.Logger()))
+	}
+	
 	r.Use(internalMiddleware.Logger(structuredLogger.Logger()))
 	r.Use(middleware.Recoverer)
 	r.Use(internalMiddleware.CORS())
@@ -213,6 +227,11 @@ func setupRouterWithObservability(
 	// Metrics middleware
 	if cfg.Observability.MetricsEnabled {
 		r.Use(internalMiddleware.Metrics())
+	}
+
+	// OpenTelemetry metrics middleware
+	if cfg.Observability.OTELEnabled {
+		r.Use(internalMiddleware.OTELMetrics(otelMetrics))
 	}
 
 	// Health check endpoints
