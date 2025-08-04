@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: globeco-allocation-service
+  namespace: globeco
   labels:
     app: globeco-allocation-service
     environment: development
