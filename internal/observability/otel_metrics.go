@@ -126,9 +126,10 @@ func (m *OTELMetricsManager) initializeMetrics() error {
 	}
 
 	m.httpRequestDuration, err = m.meter.Float64Histogram(
-		"http_request_duration_seconds",
-		metric.WithDescription("Duration of HTTP requests"),
-		metric.WithExplicitBucketBoundaries(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
+		"http_request_duration_milliseconds",
+		metric.WithDescription("Duration of HTTP requests in milliseconds"),
+		metric.WithUnit("ms"),
+		metric.WithExplicitBucketBoundaries(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000),
 	)
 	if err != nil {
 		return err
@@ -269,7 +270,9 @@ func (m *OTELMetricsManager) RecordHTTPRequest(ctx context.Context, method, path
 			attribute.String("status", status),
 		))
 
-	m.httpRequestDuration.Record(ctx, duration.Seconds(),
+	// CRITICAL: Convert duration to milliseconds
+	durationMs := float64(duration.Nanoseconds()) / 1e6
+	m.httpRequestDuration.Record(ctx, durationMs,
 		metric.WithAttributes(
 			attribute.String("method", method),
 			attribute.String("path", path),
@@ -280,7 +283,8 @@ func (m *OTELMetricsManager) RecordHTTPRequest(ctx context.Context, method, path
 		zap.String("method", method),
 		zap.String("path", path),
 		zap.String("status", status),
-		zap.Duration("duration", duration))
+		zap.Duration("duration", duration),
+		zap.Float64("duration_ms", durationMs))
 }
 
 // RecordHTTPRequestStart records the start of an HTTP request

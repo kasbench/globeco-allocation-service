@@ -224,13 +224,28 @@ func setupRouterWithObservability(
 	r.Use(middleware.Recoverer)
 	r.Use(internalMiddleware.CORS())
 
-	// Metrics middleware
+	// Legacy Prometheus metrics middleware (kept for backward compatibility)
 	if cfg.Observability.MetricsEnabled {
 		r.Use(internalMiddleware.Metrics())
 	}
 
-	// OpenTelemetry metrics middleware
-	if cfg.Observability.OTELEnabled {
+	// Enhanced OpenTelemetry metrics middleware (produces http_request_duration in milliseconds)
+	if cfg.Observability.EnhancedMetricsEnabled && cfg.Observability.OTELEnabled {
+		enhancedMetrics := internalMiddleware.NewEnhancedMetricsMiddleware(
+			internalMiddleware.EnhancedMetricsConfig{
+				ServiceName:           cfg.Observability.OTELServiceName,
+				Enabled:               cfg.Observability.EnhancedMetricsEnabled,
+				MaxPathPatternCache:   cfg.Observability.EnhancedMetricsMaxPathPatternCache,
+				MaxPathLength:         cfg.Observability.EnhancedMetricsMaxPathLength,
+				EnableFailsafeLogging: cfg.Observability.EnhancedMetricsEnableFailsafeLogging,
+			},
+			structuredLogger.Logger(),
+		)
+		r.Use(enhancedMetrics.Handler())
+	}
+
+	// Legacy OpenTelemetry metrics middleware (produces http_request_duration in seconds)
+	if cfg.Observability.OTELEnabled && !cfg.Observability.EnhancedMetricsEnabled {
 		r.Use(internalMiddleware.OTELMetrics(otelMetrics))
 	}
 

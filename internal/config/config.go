@@ -62,6 +62,12 @@ type ObservabilityConfig struct {
 	MetricsEnabled       bool   `mapstructure:"metrics_enabled"`
 	MetricsPath          string `mapstructure:"metrics_path"`
 	MetricsListenAddress string `mapstructure:"metrics_listen_address"`
+
+	// Enhanced metrics configuration
+	EnhancedMetricsEnabled               bool `mapstructure:"enhanced_metrics_enabled"`
+	EnhancedMetricsMaxPathPatternCache   int  `mapstructure:"enhanced_metrics_max_path_pattern_cache"`
+	EnhancedMetricsMaxPathLength         int  `mapstructure:"enhanced_metrics_max_path_length"`
+	EnhancedMetricsEnableFailsafeLogging bool `mapstructure:"enhanced_metrics_enable_failsafe_logging"`
 }
 
 // Load loads configuration from environment variables
@@ -136,6 +142,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("observability.metrics_enabled", true)
 	v.SetDefault("observability.metrics_path", "/metrics")
 	v.SetDefault("observability.metrics_listen_address", "")
+
+	// Enhanced metrics defaults
+	v.SetDefault("observability.enhanced_metrics_enabled", true)
+	v.SetDefault("observability.enhanced_metrics_max_path_pattern_cache", 1000)
+	v.SetDefault("observability.enhanced_metrics_max_path_length", 100)
+	v.SetDefault("observability.enhanced_metrics_enable_failsafe_logging", false)
 }
 
 // DatabaseConnectionString returns the PostgreSQL connection string
