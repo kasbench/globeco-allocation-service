@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -119,9 +120,8 @@ func (s *KubernetesBatchInvokerService) InvokePortfolioAccountingCLI(ctx context
 		zap.String("filename", filename),
 		zap.String("outputDir", outputDir))
 
-	// Generate unique job name with timestamp
-	timestamp := time.Now().Unix()
-	jobName := fmt.Sprintf("portfolio-cli-%d", timestamp)
+	// Generate unique job name with timestamp (Requirement 1.3: proper job naming)
+	jobName := s.generateJobName("portfolio-cli")
 
 	// Create batch job configuration
 	jobConfig := &BatchJobConfig{
@@ -177,9 +177,8 @@ func (s *KubernetesBatchInvokerService) RetryBatchJob(ctx context.Context, filen
 		zap.String("filename", filename),
 		zap.String("outputDir", outputDir))
 
-	// Use the same logic as InvokePortfolioAccountingCLI but with retry prefix
-	timestamp := time.Now().Unix()
-	jobName := fmt.Sprintf("portfolio-cli-retry-%d", timestamp)
+	// Generate unique retry job name with timestamp
+	jobName := s.generateJobName("portfolio-cli-retry")
 
 	jobConfig := &BatchJobConfig{
 		JobName:        jobName,
@@ -280,16 +279,41 @@ func (s *KubernetesBatchInvokerService) ValidateKubernetesAccess() error {
 }
 
 // createBatchJob creates a Kubernetes Job manifest for Portfolio Accounting CLI
+// This method implements dynamic job manifest generation with proper volume mounts,
+// job naming with timestamps, and comprehensive labeling as per requirements 1.3 and 6.2
 func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (*batchv1.Job, error) {
-	// Create job labels
-	labels := map[string]string{
-		"app":        "portfolio-accounting-cli",
-		"component":  "batch-processor",
-		"managed-by": "globeco-allocation-service",
-		"job-name":   config.JobName,
+	if config == nil {
+		return nil, fmt.Errorf("batch job config is required")
 	}
 
-	// Create container spec
+	// Validate required configuration fields
+	if config.JobName == "" {
+		return nil, fmt.Errorf("job name is required")
+	}
+	if config.Namespace == "" {
+		return nil, fmt.Errorf("namespace is required")
+	}
+	if config.Image == "" {
+		return nil, fmt.Errorf("container image is required")
+	}
+	if config.Filename == "" {
+		return nil, fmt.Errorf("filename is required")
+	}
+
+	// Create comprehensive job labels with timestamp and proper identification
+	// Requirement 1.3: Proper labeling for job identification and management
+	labels := map[string]string{
+		"app":                   "portfolio-accounting-cli",
+		"component":             "batch-processor",
+		"managed-by":            "globeco-allocation-service",
+		"job-name":              config.JobName,
+		"globeco.io/service":    "allocation-service",
+		"globeco.io/job-type":   "portfolio-accounting",
+		"globeco.io/created-by": "kubernetes-batch-invoker",
+		"globeco.io/filename":   sanitizeLabelValue(config.Filename),
+	}
+
+	// Create container spec with enhanced configuration
 	container := corev1.Container{
 		Name:    "portfolio-cli",
 		Image:   config.Image,
@@ -297,18 +321,20 @@ func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (
 		Args: []string{
 			"process",
 			"--file", fmt.Sprintf("/data/%s", config.Filename),
-			"--output-dir", "/data",
+			"--output-dir", config.OutputDir,
 			"--config", "/etc/config/config.yaml",
 		},
+		// Requirement 6.2: Proper volume mounts for NFS access
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      "nfs-storage",
 				MountPath: "/data",
-				ReadOnly:  false,
+				ReadOnly:  false, // CLI needs write access for output files
 			},
 			{
 				Name:      "cli-config",
 				MountPath: "/etc/config",
+				ReadOnly:  true, // Config should be read-only
 			},
 		},
 		Env: []corev1.EnvVar{
@@ -319,6 +345,14 @@ func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (
 			{
 				Name:  "GLOBECO_PA_SERVER_PORT",
 				Value: "8089",
+			},
+			{
+				Name:  "JOB_NAME",
+				Value: config.JobName,
+			},
+			{
+				Name:  "INPUT_FILENAME",
+				Value: config.Filename,
 			},
 		},
 		Resources: corev1.ResourceRequirements{
@@ -331,9 +365,17 @@ func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (
 				corev1.ResourceCPU:    resource.MustParse("500m"),
 			},
 		},
+		// Add security context for better security posture
+		SecurityContext: &corev1.SecurityContext{
+			RunAsNonRoot:             boolPtr(true),
+			RunAsUser:                int64Ptr(1000),
+			AllowPrivilegeEscalation: boolPtr(false),
+			ReadOnlyRootFilesystem:   boolPtr(true),
+		},
 	}
 
-	// Create volumes
+	// Create volumes with proper NFS and ConfigMap configuration
+	// Requirement 6.2: Proper volume configuration for NFS access
 	volumes := []corev1.Volume{
 		{
 			Name: "nfs-storage",
@@ -350,41 +392,73 @@ func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: "portfolio-cli-config",
 					},
+					DefaultMode: int32Ptr(0444), // Read-only permissions
 				},
 			},
 		},
 	}
 
-	// Create pod template spec
+	// Create pod template spec with enhanced configuration
 	podSpec := corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: config.ServiceAccount,
 		Containers:         []corev1.Container{container},
 		Volumes:            volumes,
+		// Add security context at pod level
+		SecurityContext: &corev1.PodSecurityContext{
+			FSGroup: int64Ptr(1000),
+		},
+		// Add node selector for better scheduling if needed
+		NodeSelector: map[string]string{
+			"kubernetes.io/os": "linux",
+		},
 	}
 
-	// Create job spec
+	// Create job spec with comprehensive configuration
+	// Requirement 1.3: Proper job configuration with timeouts and retry limits
 	jobSpec := batchv1.JobSpec{
 		TTLSecondsAfterFinished: int32Ptr(3600), // Clean up after 1 hour
 		BackoffLimit:            &config.RetryLimit,
 		ActiveDeadlineSeconds:   int64Ptr(int64(config.Timeout.Seconds())),
+		Completions:             int32Ptr(1), // Ensure exactly one successful completion
+		Parallelism:             int32Ptr(1), // Run only one pod at a time
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: labels,
+				Annotations: map[string]string{
+					"globeco.io/created-at": time.Now().UTC().Format(time.RFC3339),
+					"globeco.io/filename":   config.Filename,
+					"globeco.io/output-dir": config.OutputDir,
+				},
 			},
 			Spec: podSpec,
 		},
 	}
 
-	// Create the job
+	// Create the job with comprehensive metadata
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.JobName,
 			Namespace: config.Namespace,
 			Labels:    labels,
+			Annotations: map[string]string{
+				"globeco.io/created-at":      time.Now().UTC().Format(time.RFC3339),
+				"globeco.io/filename":        config.Filename,
+				"globeco.io/output-dir":      config.OutputDir,
+				"globeco.io/service-account": config.ServiceAccount,
+				"globeco.io/nfs-pvc":         config.NFSVolumeClaim,
+			},
 		},
 		Spec: jobSpec,
 	}
+
+	s.logger.Debug("Created batch job manifest",
+		zap.String("job_name", config.JobName),
+		zap.String("namespace", config.Namespace),
+		zap.String("image", config.Image),
+		zap.String("filename", config.Filename),
+		zap.String("service_account", config.ServiceAccount),
+		zap.String("nfs_pvc", config.NFSVolumeClaim))
 
 	return job, nil
 }
@@ -449,4 +523,352 @@ func int32Ptr(i int32) *int32 {
 
 func int64Ptr(i int64) *int64 {
 	return &i
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// sanitizeLabelValue ensures label values conform to Kubernetes requirements
+// Labels must be 63 characters or less and match regex [a-z0-9A-Z]([a-z0-9A-Z\-_.]*[a-z0-9A-Z])?
+func sanitizeLabelValue(value string) string {
+	if len(value) == 0 {
+		return "unknown"
+	}
+
+	// Replace invalid characters with hyphens
+	sanitized := ""
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			sanitized += string(r)
+		} else {
+			sanitized += "-"
+		}
+	}
+
+	// Ensure it starts and ends with alphanumeric
+	if len(sanitized) > 0 && !isAlphanumeric(rune(sanitized[0])) {
+		sanitized = "x" + sanitized
+	}
+	if len(sanitized) > 0 && !isAlphanumeric(rune(sanitized[len(sanitized)-1])) {
+		sanitized = sanitized + "x"
+	}
+
+	// Truncate to 63 characters
+	if len(sanitized) > 63 {
+		sanitized = sanitized[:63]
+		// Ensure it still ends with alphanumeric after truncation
+		if !isAlphanumeric(rune(sanitized[len(sanitized)-1])) {
+			sanitized = sanitized[:62] + "x"
+		}
+	}
+
+	return sanitized
+}
+
+// isAlphanumeric checks if a rune is alphanumeric
+func isAlphanumeric(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+}
+
+// generateJobName creates a unique job name with timestamp
+// Requirement 1.3: Add job naming with timestamps and proper labeling
+func (s *KubernetesBatchInvokerService) generateJobName(prefix string) string {
+	timestamp := time.Now().UTC()
+
+	// Use both Unix timestamp and formatted time for better uniqueness and readability
+	unixTime := timestamp.Unix()
+	formattedTime := timestamp.Format("20060102-150405")
+
+	// Create job name: prefix-YYYYMMDD-HHMMSS-unixtime
+	jobName := fmt.Sprintf("%s-%s-%d", prefix, formattedTime, unixTime)
+
+	// Ensure the job name is valid for Kubernetes (DNS-1123 subdomain)
+	// Must be lowercase, max 63 chars, start/end with alphanumeric
+	jobName = strings.ToLower(jobName)
+	if len(jobName) > 63 {
+		// Truncate but keep the timestamp for uniqueness
+		maxPrefixLen := 63 - len(fmt.Sprintf("-%s-%d", formattedTime, unixTime))
+		if maxPrefixLen > 0 {
+			jobName = fmt.Sprintf("%s-%s-%d", prefix[:maxPrefixLen], formattedTime, unixTime)
+		} else {
+			// Fallback to just timestamp if prefix is too long
+			jobName = fmt.Sprintf("%s-%d", formattedTime, unixTime)
+		}
+		jobName = strings.ToLower(jobName)
+	}
+
+	return jobName
+}
+
+// JobTemplate represents a reusable job template structure
+// Requirement 1.3: Create job template structure and configuration
+type JobTemplate struct {
+	APIVersion string          `yaml:"apiVersion"`
+	Kind       string          `yaml:"kind"`
+	Metadata   JobMetadata     `yaml:"metadata"`
+	Spec       JobTemplateSpec `yaml:"spec"`
+}
+
+type JobMetadata struct {
+	Name        string            `yaml:"name,omitempty"`
+	Namespace   string            `yaml:"namespace,omitempty"`
+	Labels      map[string]string `yaml:"labels"`
+	Annotations map[string]string `yaml:"annotations"`
+}
+
+type JobTemplateSpec struct {
+	TTLSecondsAfterFinished int32           `yaml:"ttlSecondsAfterFinished"`
+	BackoffLimit            int32           `yaml:"backoffLimit"`
+	ActiveDeadlineSeconds   int64           `yaml:"activeDeadlineSeconds"`
+	Completions             int32           `yaml:"completions"`
+	Parallelism             int32           `yaml:"parallelism"`
+	Template                PodTemplateSpec `yaml:"template"`
+}
+
+type PodTemplateSpec struct {
+	Metadata PodMetadata `yaml:"metadata"`
+	Spec     PodSpec     `yaml:"spec"`
+}
+
+type PodMetadata struct {
+	Labels      map[string]string `yaml:"labels"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+}
+
+type PodSpec struct {
+	RestartPolicy      string              `yaml:"restartPolicy"`
+	ServiceAccountName string              `yaml:"serviceAccountName,omitempty"`
+	Containers         []ContainerSpec     `yaml:"containers"`
+	Volumes            []Volume            `yaml:"volumes"`
+	SecurityContext    *PodSecurityContext `yaml:"securityContext,omitempty"`
+	NodeSelector       map[string]string   `yaml:"nodeSelector,omitempty"`
+}
+
+type ContainerSpec struct {
+	Name            string               `yaml:"name"`
+	Image           string               `yaml:"image,omitempty"`
+	Command         []string             `yaml:"command,omitempty"`
+	Args            []string             `yaml:"args,omitempty"`
+	VolumeMounts    []VolumeMount        `yaml:"volumeMounts,omitempty"`
+	Env             []EnvVar             `yaml:"env,omitempty"`
+	Resources       ResourceRequirements `yaml:"resources,omitempty"`
+	SecurityContext SecurityContext      `yaml:"securityContext,omitempty"`
+}
+
+type VolumeMount struct {
+	Name      string `yaml:"name"`
+	MountPath string `yaml:"mountPath"`
+	ReadOnly  bool   `yaml:"readOnly,omitempty"`
+}
+
+type EnvVar struct {
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
+}
+
+type ResourceRequirements struct {
+	Requests ResourceList `yaml:"requests,omitempty"`
+	Limits   ResourceList `yaml:"limits,omitempty"`
+}
+
+type ResourceList struct {
+	Memory string `yaml:"memory,omitempty"`
+	CPU    string `yaml:"cpu,omitempty"`
+}
+
+type SecurityContext struct {
+	RunAsNonRoot             bool  `yaml:"runAsNonRoot,omitempty"`
+	RunAsUser                int64 `yaml:"runAsUser,omitempty"`
+	AllowPrivilegeEscalation bool  `yaml:"allowPrivilegeEscalation,omitempty"`
+	ReadOnlyRootFilesystem   bool  `yaml:"readOnlyRootFilesystem,omitempty"`
+}
+
+type Volume struct {
+	Name                  string                 `yaml:"name"`
+	PersistentVolumeClaim *PVCVolumeSource       `yaml:"persistentVolumeClaim,omitempty"`
+	ConfigMap             *ConfigMapVolumeSource `yaml:"configMap,omitempty"`
+}
+
+type PVCVolumeSource struct {
+	ClaimName string `yaml:"claimName"`
+}
+
+type ConfigMapVolumeSource struct {
+	Name        string `yaml:"name"`
+	DefaultMode int32  `yaml:"defaultMode,omitempty"`
+}
+
+type PodSecurityContext struct {
+	FSGroup int64 `yaml:"fsGroup,omitempty"`
+}
+
+// createJobTemplate creates a reusable job template structure
+// Requirement 1.3: Create job template structure and configuration
+func (s *KubernetesBatchInvokerService) createJobTemplate() *JobTemplate {
+	return &JobTemplate{
+		APIVersion: "batch/v1",
+		Kind:       "Job",
+		Metadata: JobMetadata{
+			Labels: map[string]string{
+				"app":                   "portfolio-accounting-cli",
+				"component":             "batch-processor",
+				"managed-by":            "globeco-allocation-service",
+				"globeco.io/service":    "allocation-service",
+				"globeco.io/job-type":   "portfolio-accounting",
+				"globeco.io/created-by": "kubernetes-batch-invoker",
+			},
+			Annotations: map[string]string{
+				"globeco.io/created-at": time.Now().UTC().Format(time.RFC3339),
+			},
+		},
+		Spec: JobTemplateSpec{
+			TTLSecondsAfterFinished: 3600, // Clean up after 1 hour
+			BackoffLimit:            2,    // Default retry limit
+			ActiveDeadlineSeconds:   1800, // 30 minute default timeout
+			Completions:             1,    // Ensure exactly one successful completion
+			Parallelism:             1,    // Run only one pod at a time
+			Template: PodTemplateSpec{
+				Metadata: PodMetadata{
+					Labels: map[string]string{
+						"app":       "portfolio-accounting-cli",
+						"component": "batch-processor",
+					},
+				},
+				Spec: PodSpec{
+					RestartPolicy: "Never",
+					Containers: []ContainerSpec{
+						{
+							Name:    "portfolio-cli",
+							Command: []string{"/usr/local/bin/cli"},
+							VolumeMounts: []VolumeMount{
+								{
+									Name:      "nfs-storage",
+									MountPath: "/data",
+									ReadOnly:  false,
+								},
+								{
+									Name:      "cli-config",
+									MountPath: "/etc/config",
+									ReadOnly:  true,
+								},
+							},
+							Env: []EnvVar{
+								{
+									Name:  "GLOBECO_PA_SERVER_HOST",
+									Value: "globeco-allocation-service",
+								},
+								{
+									Name:  "GLOBECO_PA_SERVER_PORT",
+									Value: "8089",
+								},
+							},
+							Resources: ResourceRequirements{
+								Requests: ResourceList{
+									Memory: "512Mi",
+									CPU:    "250m",
+								},
+								Limits: ResourceList{
+									Memory: "1Gi",
+									CPU:    "500m",
+								},
+							},
+							SecurityContext: SecurityContext{
+								RunAsNonRoot:             true,
+								RunAsUser:                1000,
+								AllowPrivilegeEscalation: false,
+								ReadOnlyRootFilesystem:   true,
+							},
+						},
+					},
+					Volumes: []Volume{
+						{
+							Name: "nfs-storage",
+							PersistentVolumeClaim: &PVCVolumeSource{
+								ClaimName: "", // Will be set dynamically
+							},
+						},
+						{
+							Name: "cli-config",
+							ConfigMap: &ConfigMapVolumeSource{
+								Name:        "portfolio-cli-config",
+								DefaultMode: 0444,
+							},
+						},
+					},
+					SecurityContext: &PodSecurityContext{
+						FSGroup: 1000,
+					},
+					NodeSelector: map[string]string{
+						"kubernetes.io/os": "linux",
+					},
+				},
+			},
+		},
+	}
+}
+
+// applyJobTemplateConfig applies configuration to a job template
+// Requirement 1.3: Dynamic job manifest generation with proper volume mounts
+func (s *KubernetesBatchInvokerService) applyJobTemplateConfig(template *JobTemplate, config *BatchJobConfig) error {
+	if template == nil || config == nil {
+		return fmt.Errorf("template and config are required")
+	}
+
+	// Apply job metadata
+	template.Metadata.Name = config.JobName
+	template.Metadata.Namespace = config.Namespace
+	template.Metadata.Labels["job-name"] = config.JobName
+	template.Metadata.Labels["globeco.io/filename"] = sanitizeLabelValue(config.Filename)
+	template.Metadata.Annotations["globeco.io/filename"] = config.Filename
+	template.Metadata.Annotations["globeco.io/output-dir"] = config.OutputDir
+
+	// Apply job spec configuration
+	template.Spec.BackoffLimit = config.RetryLimit
+	template.Spec.ActiveDeadlineSeconds = int64(config.Timeout.Seconds())
+
+	// Apply pod template configuration
+	template.Spec.Template.Metadata.Labels["job-name"] = config.JobName
+	template.Spec.Template.Metadata.Annotations = map[string]string{
+		"globeco.io/created-at": time.Now().UTC().Format(time.RFC3339),
+		"globeco.io/filename":   config.Filename,
+		"globeco.io/output-dir": config.OutputDir,
+	}
+
+	// Apply pod spec configuration
+	template.Spec.Template.Spec.ServiceAccountName = config.ServiceAccount
+
+	// Configure container
+	if len(template.Spec.Template.Spec.Containers) > 0 {
+		container := &template.Spec.Template.Spec.Containers[0]
+		container.Image = config.Image
+		container.Args = []string{
+			"process",
+			"--file", fmt.Sprintf("/data/%s", config.Filename),
+			"--output-dir", config.OutputDir,
+			"--config", "/etc/config/config.yaml",
+		}
+
+		// Add job-specific environment variables
+		container.Env = append(container.Env, []EnvVar{
+			{
+				Name:  "JOB_NAME",
+				Value: config.JobName,
+			},
+			{
+				Name:  "INPUT_FILENAME",
+				Value: config.Filename,
+			},
+		}...)
+	}
+
+	// Configure NFS volume
+	for i := range template.Spec.Template.Spec.Volumes {
+		volume := &template.Spec.Template.Spec.Volumes[i]
+		if volume.Name == "nfs-storage" && volume.PersistentVolumeClaim != nil {
+			volume.PersistentVolumeClaim.ClaimName = config.NFSVolumeClaim
+		}
+	}
+
+	return nil
 }
