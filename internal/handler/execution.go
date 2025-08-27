@@ -194,6 +194,77 @@ func (h *ExecutionHandler) SendExecutions(w http.ResponseWriter, r *http.Request
 	h.writeJSONResponse(w, statusCode, response)
 }
 
+// RetryExecutionRequest represents the request body for retry endpoint
+type RetryExecutionRequest struct {
+	Filename string `json:"filename" validate:"required"`
+}
+
+// RetryExecution handles POST /api/v1/executions/send/retry (Requirements 3.3, 3.4)
+func (h *ExecutionHandler) RetryExecution(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	h.logger.Info("Processing retry execution request")
+
+	// Parse and validate request body (Requirement 3.3: request validation)
+	var req RetryExecutionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error("Failed to decode retry request body", zap.Error(err))
+		h.writeErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
+		return
+	}
+
+	// Validate filename parameter (Requirement 3.3: filename parameter validation)
+	if req.Filename == "" {
+		h.logger.Error("Filename parameter is required for retry operation")
+		h.writeErrorResponse(w, http.StatusBadRequest, "filename parameter is required", nil)
+		return
+	}
+
+	h.logger.Info("Retrying execution for file",
+		zap.String("filename", req.Filename))
+
+	// Call service to retry execution
+	response, err := h.executionService.RetryExecution(ctx, req.Filename)
+	if err != nil {
+		// Check for specific error types
+		if strings.Contains(err.Error(), "file does not exist") {
+			h.logger.Error("File not found for retry operation",
+				zap.String("filename", req.Filename),
+				zap.Error(err))
+			h.writeErrorResponse(w, http.StatusNotFound, "file not found for retry operation", err)
+			return
+		}
+
+		if strings.Contains(err.Error(), "failed to check file existence") {
+			h.logger.Error("Failed to validate file existence for retry",
+				zap.String("filename", req.Filename),
+				zap.Error(err))
+			h.writeErrorResponse(w, http.StatusInternalServerError, "failed to validate file for retry", err)
+			return
+		}
+
+		// General retry failure (Requirement 3.4: 500 error for retry failure)
+		h.logger.Error("Failed to retry execution",
+			zap.String("filename", req.Filename),
+			zap.Error(err))
+		h.writeErrorResponse(w, http.StatusInternalServerError, "failed to retry execution", err)
+		return
+	}
+
+	// Determine status code based on response (Requirement 3.3, 3.4: proper HTTP status codes)
+	statusCode := http.StatusOK
+	if response.Status == "error" {
+		statusCode = http.StatusInternalServerError
+	}
+
+	h.logger.Info("Retry execution completed",
+		zap.String("filename", req.Filename),
+		zap.String("status", response.Status),
+		zap.Int("status_code", statusCode))
+
+	h.writeJSONResponse(w, statusCode, response)
+}
+
 // writeJSONResponse writes a JSON response with the given status code
 func (h *ExecutionHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")

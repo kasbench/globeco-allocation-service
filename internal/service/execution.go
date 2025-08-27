@@ -534,6 +534,144 @@ func (s *ExecutionService) ValidateJobStatusForCleanup(ctx context.Context, jobN
 	return nil
 }
 
+// RetryExecution retries batch job execution for a specific file without regenerating it (Requirements 3.1, 3.2)
+func (s *ExecutionService) RetryExecution(ctx context.Context, filename string) (*domain.SendResponse, error) {
+	if filename == "" {
+		return nil, fmt.Errorf("filename is required for retry operation")
+	}
+
+	s.logger.Info("Starting retry execution for existing file",
+		zap.String("filename", filename))
+
+	// Step 1: Validate file existence (Requirement 3.1: file existence validation)
+	filePath := s.fileGenerator.GetFilePath(filename)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		s.logger.Error("File does not exist for retry operation",
+			zap.String("filename", filename),
+			zap.String("filepath", filePath))
+		return nil, fmt.Errorf("file does not exist: %s", filename)
+	} else if err != nil {
+		s.logger.Error("Failed to check file existence",
+			zap.String("filename", filename),
+			zap.String("filepath", filePath),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to check file existence: %w", err)
+	}
+
+	s.logger.Info("File exists, proceeding with retry operation",
+		zap.String("filename", filename),
+		zap.String("filepath", filePath))
+
+	// Step 2: Determine execution mode and retry batch job submission (Requirement 3.2)
+	if s.config.KubernetesBatch.Enabled && s.kubernetesBatchInvoker != nil {
+		s.logger.Info("Using Kubernetes batch job for retry execution")
+		return s.retryWithKubernetes(ctx, filename)
+	}
+
+	s.logger.Info("Using direct CLI for retry execution")
+	return s.retryWithDirectCLI(ctx, filename)
+}
+
+// retryWithKubernetes retries execution using Kubernetes batch jobs without file regeneration
+func (s *ExecutionService) retryWithKubernetes(ctx context.Context, filename string) (*domain.SendResponse, error) {
+	s.logger.Info("Starting retry execution with Kubernetes batch job",
+		zap.String("filename", filename))
+
+	// Generate unique retry job name
+	jobName := fmt.Sprintf("portfolio-cli-retry-%d", time.Now().Unix())
+
+	// Step 1: Submit retry batch job (Requirement 3.2: batch job submission for existing files)
+	if err := s.kubernetesBatchInvoker.RetryBatchJob(ctx, filename, s.config.OutputDir); err != nil {
+		s.logger.Error("Kubernetes retry batch job failed",
+			zap.String("filename", filename),
+			zap.String("job_name", jobName),
+			zap.Error(err))
+
+		// Return error response for failed retry (Requirement 3.4: 500 error for failure)
+		return &domain.SendResponse{
+			ProcessedCount: 0,
+			FileName:       filename,
+			Status:         "error",
+			Message:        fmt.Sprintf("Kubernetes retry batch job failed: %v", err),
+			JobName:        &jobName,
+			JobStatus:      stringPtr("failed"),
+			ExecutionMode:  "kubernetes",
+		}, fmt.Errorf("Kubernetes retry batch job failed: %w", err)
+	}
+
+	// Step 2: Handle file cleanup for successful retry (same logic as regular execution)
+	if s.config.FileCleanupEnabled {
+		// Validate job status before file deletion
+		if err := s.ValidateJobStatusForCleanup(ctx, jobName); err != nil {
+			s.logger.Error("Retry job status validation failed, skipping file cleanup",
+				zap.String("job_name", jobName),
+				zap.String("filename", filename),
+				zap.Error(err))
+		} else {
+			// Only cleanup if job status validation passes
+			if err := s.cleanupFileAfterSuccessfulJob(filename); err != nil {
+				s.logger.Warn("File cleanup failed after successful retry job", zap.Error(err))
+			}
+		}
+	}
+
+	s.logger.Info("Retry execution completed successfully with Kubernetes batch job",
+		zap.String("filename", filename),
+		zap.String("job_name", jobName))
+
+	// Return success response (Requirement 3.3: 200 success for successful retry)
+	return &domain.SendResponse{
+		ProcessedCount: 0, // We don't know the count for retry operations
+		FileName:       filename,
+		Status:         "success",
+		Message:        "Kubernetes retry batch job executed successfully",
+		JobName:        &jobName,
+		JobStatus:      stringPtr("succeeded"),
+		ExecutionMode:  "kubernetes",
+	}, nil
+}
+
+// retryWithDirectCLI retries execution using direct CLI invocation without file regeneration
+func (s *ExecutionService) retryWithDirectCLI(ctx context.Context, filename string) (*domain.SendResponse, error) {
+	s.logger.Info("Starting retry execution with direct CLI",
+		zap.String("filename", filename))
+
+	// Step 1: Invoke CLI directly for existing file (Requirement 3.2: retry without regeneration)
+	if err := s.cliInvoker.InvokePortfolioAccountingCLI(ctx, filename, s.config.OutputDir); err != nil {
+		s.logger.Error("Direct CLI retry invocation failed",
+			zap.String("filename", filename),
+			zap.Error(err))
+
+		// Return error response for failed retry (Requirement 3.4: 500 error for failure)
+		return &domain.SendResponse{
+			ProcessedCount: 0,
+			FileName:       filename,
+			Status:         "error",
+			Message:        fmt.Sprintf("CLI retry invocation failed: %v", err),
+			ExecutionMode:  "direct",
+		}, fmt.Errorf("CLI retry invocation failed: %w", err)
+	}
+
+	// Step 2: Handle file cleanup for successful retry (legacy behavior)
+	if s.config.FileCleanupEnabled {
+		if err := s.fileGenerator.CleanupFile(filename, true); err != nil {
+			s.logger.Warn("File cleanup failed after successful retry", zap.Error(err))
+		}
+	}
+
+	s.logger.Info("Retry execution completed successfully with direct CLI",
+		zap.String("filename", filename))
+
+	// Return success response (Requirement 3.3: 200 success for successful retry)
+	return &domain.SendResponse{
+		ProcessedCount: 0, // We don't know the count for retry operations
+		FileName:       filename,
+		Status:         "success",
+		Message:        "Portfolio Accounting CLI retry executed successfully",
+		ExecutionMode:  "direct",
+	}, nil
+}
+
 // stringPtr returns a pointer to the given string value
 func stringPtr(s string) *string {
 	return &s

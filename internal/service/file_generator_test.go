@@ -331,8 +331,3 @@ func TestFileGeneratorService_GetFilePath(t *testing.T) {
 
 	assert.Equal(t, expectedPath, actualPath)
 }
-
-// Helper function for string pointer
-func stringPtr(s string) *string {
-	return &s
-}

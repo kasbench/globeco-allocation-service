@@ -51,14 +51,14 @@
     - Implement proper error handling for cleanup failures
     - _Requirements: 2.3, 2.4_
 
-- [ ] 5. Implement retry endpoint functionality
-  - [ ] 5.1 Create retry service method
+- [x] 5. Implement retry endpoint functionality
+  - [x] 5.1 Create retry service method
     - Implement RetryExecution method in ExecutionService
     - Add file existence validation for retry operations
     - Create batch job submission for existing files without regeneration
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 5.2 Create retry API endpoint handler
+  - [x] 5.2 Create retry API endpoint handler
     - Implement POST /api/v1/executions/send/retry endpoint handler
     - Add request validation for filename parameter
     - Implement proper HTTP status code responses for success/failure

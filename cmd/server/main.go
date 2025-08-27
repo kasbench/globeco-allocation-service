@@ -214,12 +214,12 @@ func setupRouterWithObservability(
 	// Core middleware
 	r.Use(middleware.RequestID)
 	r.Use(structuredLogger.CorrelationIDMiddleware())
-	
+
 	// OpenTelemetry tracing middleware (before logging for proper trace context)
 	if cfg.Observability.OTELEnabled {
 		r.Use(internalMiddleware.OTELTracing(cfg.Observability.OTELServiceName, structuredLogger.Logger()))
 	}
-	
+
 	r.Use(internalMiddleware.Logger(structuredLogger.Logger()))
 	r.Use(middleware.Recoverer)
 	r.Use(internalMiddleware.CORS())
@@ -269,6 +269,7 @@ func setupRouterWithObservability(
 			r.Post("/", executionHandler.CreateExecutions)
 			r.Get("/{id}", executionHandler.GetExecution)
 			r.Post("/send", executionHandler.SendExecutions)
+			r.Post("/send/retry", executionHandler.RetryExecution)
 		})
 	})
 
