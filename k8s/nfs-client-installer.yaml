@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nfs-client-installer
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nfs-client-installer
+  template:
+    metadata:
+      labels:
+        name: nfs-client-installer
+    spec:
+      hostPID: true
+      hostNetwork: true
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: nfs-client-installer
+        image: busybox
+        command: ['sh', '-c']
+        args:
+        - |
+          set -e
+          echo "Installing NFS client utilities..."
+          
+          # Detect the host OS and install NFS utilities
+          if nsenter -t 1 -m -u -n -i -p -- bash -c 'command -v apt-get >/dev/null 2>&1'; then
+            echo "Detected Debian/Ubuntu system"
+            nsenter -t 1 -m -u -n -i -p -- bash -c '
+              apt-get update && 
+              apt-get install -y nfs-common && 
+              systemctl enable rpc-statd && 
+              systemctl start rpc-statd || true
+            '
+          elif nsenter -t 1 -m -u -n -i -p -- bash -c 'command -v yum >/dev/null 2>&1'; then
+            echo "Detected RHEL/CentOS system"
+            nsenter -t 1 -m -u -n -i -p -- bash -c '
+              yum install -y nfs-utils && 
+              systemctl enable rpcbind && 
+              systemctl start rpcbind || true
+            '
+          elif nsenter -t 1 -m -u -n -i -p -- bash -c 'command -v dnf >/dev/null 2>&1'; then
+            echo "Detected Fedora system"
+            nsenter -t 1 -m -u -n -i -p -- bash -c '
+              dnf install -y nfs-utils && 
+              systemctl enable rpcbind && 
+              systemctl start rpcbind || true
+            '
+          else
+            echo "Unknown OS - please install NFS client utilities manually"
+            exit 1
+          fi
+          
+          echo "NFS client installation completed successfully"
+          
+          # Keep the pod running
+          while true; do
+            sleep 3600
+          done
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+          mountPropagation: Bidirectional
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /
+      terminationGracePeriodSeconds: 30

@@ -2,7 +2,7 @@
 
 ## Background
 
-This document provides requirements for the Allocation Service.  This service is designed to take output from the conversation service and prepare files to feed the Portfolio Accounting Service.  
+This document provides requirements for the Allocation Service.  This service is designed to take output from the confirmation service and prepare files to feed the Portfolio Accounting Service.  
 
 This microservice will be deployed on Kubernetes 1.33.
 

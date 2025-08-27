@@ -202,5 +202,5 @@ Apache 2.0
 
 ## API Documentation
 
-- **Swagger UI:** Interactive docs available at [http://localhost:8080/swagger-ui/](http://localhost:8089/swagger-ui/)
+- **Swagger UI:** Interactive docs available at [http://localhost:8089/swagger-ui/](http://localhost:8089/swagger-ui/)
 - **OpenAPI Spec:** Download the OpenAPI YAML at [http://localhost:8089/openapi.yaml](http://localhost:8089/openapi.yaml)

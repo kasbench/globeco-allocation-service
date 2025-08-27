@@ -1,0 +1,30 @@
+apiVersion: ceph.rook.io/v1
+kind: CephNFS
+metadata:
+  name: globeco-nfs
+  namespace: rook-ceph
+spec:
+  rados:
+    pool: nfs-ganesha-pool
+    namespace: globeco-ns
+  server:
+    active: 1
+---
+apiVersion: ceph.rook.io/v1
+apiVersion: ceph.rook.io/v1
+kind: NFSExport
+metadata:
+  name: globeco-shared
+  namespace: rook-ceph   # adjust if your Ceph cluster is in a different namespace
+spec:
+  clusterName: globeco-nfs
+  fsal:
+    name: CEPH
+    fsName: globeco
+    user_id: nfs.globeco-nfs.globeco.87201fd8
+  clients:
+    - access_type: RW
+      squash: none
+      clients: ["*"]   # allow all clients; you can replace "*" with CIDR (e.g. 10.244.0.0/16)
+  path: /volumes/_nogroup/globeco-sv/49bc89a4-a475-4892-ab62-243011cea45b
+  pseudoPath: /globeco-shared

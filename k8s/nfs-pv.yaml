@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    server: 10.109.83.84
+    path: "/globeco-shared"
+  mountOptions:
+    - nfsvers=4
+    - proto=tcp
+  persistentVolumeReclaimPolicy: Retain
