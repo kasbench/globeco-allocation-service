@@ -23,6 +23,9 @@ type Config struct {
 
 	// Observability configuration
 	Observability ObservabilityConfig `mapstructure:"observability"`
+
+	// Kubernetes batch job configuration
+	KubernetesBatch KubernetesBatchConfig `mapstructure:"kubernetes_batch"`
 }
 
 // Database holds database configuration
@@ -38,10 +41,10 @@ type Database struct {
 // ObservabilityConfig holds observability configuration
 type ObservabilityConfig struct {
 	// OpenTelemetry configuration
-	OTELEnabled         bool   `mapstructure:"otel_enabled"`
-	OTELEndpoint        string `mapstructure:"otel_endpoint"`
-	OTELServiceName     string `mapstructure:"otel_service_name"`
-	OTELServiceVersion  string `mapstructure:"otel_service_version"`
+	OTELEnabled          bool   `mapstructure:"otel_enabled"`
+	OTELEndpoint         string `mapstructure:"otel_endpoint"`
+	OTELServiceName      string `mapstructure:"otel_service_name"`
+	OTELServiceVersion   string `mapstructure:"otel_service_version"`
 	OTELServiceNamespace string `mapstructure:"otel_service_namespace"`
 
 	// Tracing configuration
@@ -68,6 +71,17 @@ type ObservabilityConfig struct {
 	EnhancedMetricsMaxPathPatternCache   int  `mapstructure:"enhanced_metrics_max_path_pattern_cache"`
 	EnhancedMetricsMaxPathLength         int  `mapstructure:"enhanced_metrics_max_path_length"`
 	EnhancedMetricsEnableFailsafeLogging bool `mapstructure:"enhanced_metrics_enable_failsafe_logging"`
+}
+
+// KubernetesBatchConfig holds Kubernetes batch job configuration
+type KubernetesBatchConfig struct {
+	Enabled            bool   `mapstructure:"enabled"`
+	Namespace          string `mapstructure:"namespace"`
+	CLIImage           string `mapstructure:"cli_image"`
+	JobTimeoutSeconds  int    `mapstructure:"job_timeout_seconds"`
+	JobRetryLimit      int    `mapstructure:"job_retry_limit"`
+	ServiceAccountName string `mapstructure:"service_account_name"`
+	NFSPVCName         string `mapstructure:"nfs_pvc_name"`
 }
 
 // Load loads configuration from environment variables
@@ -148,6 +162,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("observability.enhanced_metrics_max_path_pattern_cache", 1000)
 	v.SetDefault("observability.enhanced_metrics_max_path_length", 100)
 	v.SetDefault("observability.enhanced_metrics_enable_failsafe_logging", false)
+
+	// Kubernetes batch job defaults
+	v.SetDefault("kubernetes_batch.enabled", false)
+	v.SetDefault("kubernetes_batch.namespace", "globeco")
+	v.SetDefault("kubernetes_batch.cli_image", "kasbench/globeco-portfolio-accounting-service-cli:latest")
+	v.SetDefault("kubernetes_batch.job_timeout_seconds", 1800) // 30 minutes
+	v.SetDefault("kubernetes_batch.job_retry_limit", 2)
+	v.SetDefault("kubernetes_batch.service_account_name", "globeco-allocation-service")
+	v.SetDefault("kubernetes_batch.nfs_pvc_name", "nfs-pvc")
 }
 
 // DatabaseConnectionString returns the PostgreSQL connection string
