@@ -77,7 +77,7 @@
     - Implement validation and error handling for deletion operations
     - _Requirements: 4.2, 4.3_
 
-- [ ] 7. Create Kubernetes RBAC manifests
+- [x] 7. Create Kubernetes RBAC manifests
   - Create ServiceAccount manifest for globeco-allocation-service
   - Create Role manifest with batch job management permissions
   - Create RoleBinding to associate service account with role
