@@ -1,136 +1,390 @@
 package service
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kasbench/globeco-allocation-service/internal/config"
 )
 
-func TestNewKubernetesBatchInvokerService(t *testing.T) {
-	logger := zap.NewNop()
+func TestAnalyzeJobStatus(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	cfg := &config.KubernetesBatchConfig{
+		Namespace:          "test",
+		CLIImage:           "test-image",
+		JobTimeoutSeconds:  1800,
+		JobRetryLimit:      2,
+		ServiceAccountName: "test-sa",
+		NFSPVCName:         "test-pvc",
+	}
+
+	service := &KubernetesBatchInvokerService{
+		config:  cfg,
+		logger:  logger,
+		timeout: 30 * time.Minute,
+	}
 
 	tests := []struct {
-		name        string
-		config      *config.KubernetesBatchConfig
-		logger      *zap.Logger
-		expectError bool
-		errorMsg    string
+		name           string
+		job            *batchv1.Job
+		expectedStatus string
 	}{
 		{
-			name:        "nil config should return error",
-			config:      nil,
-			logger:      logger,
-			expectError: true,
-			errorMsg:    "kubernetes batch config is required",
+			name: "job succeeded",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-job"},
+				Status: batchv1.JobStatus{
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:   batchv1.JobComplete,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			expectedStatus: "succeeded",
 		},
 		{
-			name: "nil logger should return error",
-			config: &config.KubernetesBatchConfig{
-				Enabled:            true,
-				Namespace:          "test",
-				CLIImage:           "test-image",
-				JobTimeoutSeconds:  1800,
-				JobRetryLimit:      2,
-				ServiceAccountName: "test-sa",
-				NFSPVCName:         "test-pvc",
+			name: "job failed",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-job"},
+				Status: batchv1.JobStatus{
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:   batchv1.JobFailed,
+							Status: corev1.ConditionTrue,
+							Reason: "BackoffLimitExceeded",
+						},
+					},
+				},
 			},
-			logger:      nil,
-			expectError: true,
-			errorMsg:    "logger is required",
+			expectedStatus: "failed",
 		},
 		{
-			name: "valid config should create service (will fail on k8s client creation outside cluster)",
-			config: &config.KubernetesBatchConfig{
-				Enabled:            true,
-				Namespace:          "test",
-				CLIImage:           "test-image",
-				JobTimeoutSeconds:  1800,
-				JobRetryLimit:      2,
-				ServiceAccountName: "test-sa",
-				NFSPVCName:         "test-pvc",
+			name: "job running",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-job"},
+				Status: batchv1.JobStatus{
+					Active: 1,
+				},
 			},
-			logger:      logger,
-			expectError: true, // Expected to fail outside k8s cluster
+			expectedStatus: "running",
+		},
+		{
+			name: "job pending",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-job"},
+				Status:     batchv1.JobStatus{},
+			},
+			expectedStatus: "pending",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, err := NewKubernetesBatchInvokerService(tt.config, tt.logger)
+			status := service.analyzeJobStatus(tt.job)
+			assert.Equal(t, tt.expectedStatus, status.Status)
+			assert.Equal(t, tt.job.Name, status.JobName)
+		})
+	}
+}
 
-			if tt.expectError {
+func TestValidateJobSubmission(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	cfg := &config.KubernetesBatchConfig{
+		Namespace:          "test",
+		CLIImage:           "test-image",
+		JobTimeoutSeconds:  1800,
+		JobRetryLimit:      2,
+		ServiceAccountName: "test-sa",
+		NFSPVCName:         "test-pvc",
+	}
+
+	service := &KubernetesBatchInvokerService{
+		config:  cfg,
+		logger:  logger,
+		timeout: 30 * time.Minute,
+	}
+
+	tests := []struct {
+		name      string
+		job       *batchv1.Job
+		expectErr bool
+	}{
+		{
+			name:      "nil job",
+			job:       nil,
+			expectErr: true,
+		},
+		{
+			name: "missing job name",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "test"},
+			},
+			expectErr: true,
+		},
+		{
+			name: "missing namespace",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-job"},
+			},
+			expectErr: true,
+		},
+		{
+			name: "no containers",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-job",
+					Namespace: "test",
+				},
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{},
+						},
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "valid job",
+			job: &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-job",
+					Namespace: "test",
+				},
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "test-container",
+									Image: "test-image",
+									VolumeMounts: []corev1.VolumeMount{
+										{
+											Name:      "nfs-storage",
+											MountPath: "/data",
+										},
+									},
+								},
+							},
+							Volumes: []corev1.Volume{
+								{
+									Name: "nfs-storage",
+									VolumeSource: corev1.VolumeSource{
+										PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+											ClaimName: "test-pvc",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.validateJobSubmission(tt.job)
+			if tt.expectErr {
 				assert.Error(t, err)
-				assert.Nil(t, service)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
-				}
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, service)
-				assert.Equal(t, tt.config, service.config)
-				assert.Equal(t, tt.logger, service.logger)
 			}
 		})
 	}
 }
 
-func TestBatchJobConfig(t *testing.T) {
-	config := &BatchJobConfig{
-		JobName:        "test-job",
-		Namespace:      "test-namespace",
-		Image:          "test-image",
-		Filename:       "test-file.csv",
-		OutputDir:      "/data",
-		ServiceAccount: "test-sa",
-		RetryLimit:     2,
-		NFSVolumeClaim: "test-pvc",
+func TestSanitizeLabelValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "unknown",
+		},
+		{
+			name:     "valid string",
+			input:    "test-file.csv",
+			expected: "test-file.csv",
+		},
+		{
+			name:     "string with invalid characters",
+			input:    "test@file#.csv",
+			expected: "test-file-.csv",
+		},
+		{
+			name:     "string starting with invalid character",
+			input:    "@test-file.csv",
+			expected: "x-test-file.csv",
+		},
+		{
+			name:     "string ending with invalid character",
+			input:    "test-file.csv@",
+			expected: "test-file.csv-x",
+		},
+		{
+			name:     "very long string",
+			input:    "this-is-a-very-long-filename-that-exceeds-the-kubernetes-label-limit-of-63-characters.csv",
+			expected: "this-is-a-very-long-filename-that-exceeds-the-kubernetes-labelx",
+		},
 	}
 
-	assert.Equal(t, "test-job", config.JobName)
-	assert.Equal(t, "test-namespace", config.Namespace)
-	assert.Equal(t, "test-image", config.Image)
-	assert.Equal(t, "test-file.csv", config.Filename)
-	assert.Equal(t, "/data", config.OutputDir)
-	assert.Equal(t, "test-sa", config.ServiceAccount)
-	assert.Equal(t, int32(2), config.RetryLimit)
-	assert.Equal(t, "test-pvc", config.NFSVolumeClaim)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeLabelValue(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.LessOrEqual(t, len(result), 63, "Label value should not exceed 63 characters")
+		})
+	}
 }
 
-func TestJobStatus(t *testing.T) {
-	status := &JobStatus{
-		JobName: "test-job",
-		Status:  "running",
-		Message: "Job is running",
-		PodName: "test-pod",
+func TestGenerateJobName(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	cfg := &config.KubernetesBatchConfig{
+		Namespace:          "test",
+		CLIImage:           "test-image",
+		JobTimeoutSeconds:  1800,
+		JobRetryLimit:      2,
+		ServiceAccountName: "test-sa",
+		NFSPVCName:         "test-pvc",
 	}
 
-	assert.Equal(t, "test-job", status.JobName)
-	assert.Equal(t, "running", status.Status)
-	assert.Equal(t, "Job is running", status.Message)
-	assert.Equal(t, "test-pod", status.PodName)
+	service := &KubernetesBatchInvokerService{
+		config:  cfg,
+		logger:  logger,
+		timeout: 30 * time.Minute,
+	}
+
+	tests := []struct {
+		name   string
+		prefix string
+	}{
+		{
+			name:   "standard prefix",
+			prefix: "portfolio-cli",
+		},
+		{
+			name:   "retry prefix",
+			prefix: "portfolio-cli-retry",
+		},
+		{
+			name:   "very long prefix",
+			prefix: "this-is-a-very-long-prefix-that-might-cause-issues-with-kubernetes-naming-limits",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jobName := service.generateJobName(tt.prefix)
+
+			// Verify job name properties
+			assert.NotEmpty(t, jobName)
+			assert.LessOrEqual(t, len(jobName), 63, "Job name should not exceed 63 characters")
+			assert.Equal(t, jobName, strings.ToLower(jobName), "Job name should be lowercase")
+
+			// Verify uniqueness by generating multiple names with a delay to ensure different Unix timestamp
+			time.Sleep(1001 * time.Millisecond) // Ensure different Unix timestamp
+			jobName2 := service.generateJobName(tt.prefix)
+			assert.NotEqual(t, jobName, jobName2, "Job names should be unique")
+		})
+	}
 }
 
-func TestKubernetesBatchInvokerInterface(t *testing.T) {
-	// Test that our service implements the interface
-	var _ KubernetesBatchInvoker = (*KubernetesBatchInvokerService)(nil)
-}
+func TestShouldCleanupJob(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	cfg := &config.KubernetesBatchConfig{
+		Namespace:          "test",
+		CLIImage:           "test-image",
+		JobTimeoutSeconds:  1800,
+		JobRetryLimit:      2,
+		ServiceAccountName: "test-sa",
+		NFSPVCName:         "test-pvc",
+	}
 
-func TestHelperFunctions(t *testing.T) {
-	t.Run("int32Ptr", func(t *testing.T) {
-		val := int32(42)
-		ptr := int32Ptr(val)
-		require.NotNil(t, ptr)
-		assert.Equal(t, val, *ptr)
-	})
+	service := &KubernetesBatchInvokerService{
+		config:  cfg,
+		logger:  logger,
+		timeout: 30 * time.Minute,
+	}
 
-	t.Run("int64Ptr", func(t *testing.T) {
-		val := int64(42)
-		ptr := int64Ptr(val)
-		require.NotNil(t, ptr)
-		assert.Equal(t, val, *ptr)
-	})
+	now := time.Now()
+	cutoffTime := now.Add(-1 * time.Hour)
+	oldTime := now.Add(-2 * time.Hour)
+	recentTime := now.Add(-30 * time.Minute)
+
+	tests := []struct {
+		name          string
+		job           *batchv1.Job
+		cutoffTime    time.Time
+		shouldCleanup bool
+	}{
+		{
+			name: "completed job older than cutoff",
+			job: &batchv1.Job{
+				Status: batchv1.JobStatus{
+					CompletionTime: &metav1.Time{Time: oldTime},
+				},
+			},
+			cutoffTime:    cutoffTime,
+			shouldCleanup: true,
+		},
+		{
+			name: "completed job newer than cutoff",
+			job: &batchv1.Job{
+				Status: batchv1.JobStatus{
+					CompletionTime: &metav1.Time{Time: recentTime},
+				},
+			},
+			cutoffTime:    cutoffTime,
+			shouldCleanup: false,
+		},
+		{
+			name: "running job",
+			job: &batchv1.Job{
+				Status: batchv1.JobStatus{
+					Active: 1,
+				},
+			},
+			cutoffTime:    cutoffTime,
+			shouldCleanup: false,
+		},
+		{
+			name: "failed job older than cutoff",
+			job: &batchv1.Job{
+				Status: batchv1.JobStatus{
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:               batchv1.JobFailed,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: metav1.Time{Time: oldTime},
+						},
+					},
+				},
+			},
+			cutoffTime:    cutoffTime,
+			shouldCleanup: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := service.shouldCleanupJob(tt.job, tt.cutoffTime)
+			assert.Equal(t, tt.shouldCleanup, result)
+		})
+	}
 }

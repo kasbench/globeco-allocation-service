@@ -27,6 +27,12 @@ type KubernetesBatchInvoker interface {
 
 	// ValidateKubernetesAccess validates RBAC permissions and connectivity
 	ValidateKubernetesAccess() error
+
+	// GetJobStatus retrieves the current status of a job
+	GetJobStatus(ctx context.Context, jobName string) (*JobStatus, error)
+
+	// CleanupCompletedJobs removes completed jobs older than specified duration
+	CleanupCompletedJobs(ctx context.Context, olderThan time.Duration) error
 }
 
 // KubernetesBatchInvokerService implements the KubernetesBatchInvoker interface
@@ -143,8 +149,16 @@ func (s *KubernetesBatchInvokerService) InvokePortfolioAccountingCLI(ctx context
 		return fmt.Errorf("failed to create batch job manifest: %w", err)
 	}
 
-	// Submit job to Kubernetes API
-	createdJob, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Create(ctx, job, metav1.CreateOptions{})
+	// Validate job before submission (Requirement 1.4: enhanced job submission)
+	if err := s.validateJobSubmission(job); err != nil {
+		s.logger.Error("Job validation failed",
+			zap.String("job_name", jobName),
+			zap.Error(err))
+		return fmt.Errorf("job validation failed: %w", err)
+	}
+
+	// Submit job to Kubernetes API with retry logic (Requirement 1.4, 2.1)
+	createdJob, err := s.submitJobWithRetry(ctx, job)
 	if err != nil {
 		s.logger.Error("Failed to submit batch job to Kubernetes",
 			zap.String("job_name", jobName),
@@ -154,7 +168,8 @@ func (s *KubernetesBatchInvokerService) InvokePortfolioAccountingCLI(ctx context
 
 	s.logger.Info("Batch job submitted successfully",
 		zap.String("job_name", createdJob.Name),
-		zap.String("namespace", createdJob.Namespace))
+		zap.String("namespace", createdJob.Namespace),
+		zap.String("uid", string(createdJob.UID)))
 
 	// Monitor job completion
 	if err := s.monitorJobCompletion(ctx, jobName); err != nil {
@@ -198,7 +213,16 @@ func (s *KubernetesBatchInvokerService) RetryBatchJob(ctx context.Context, filen
 		return fmt.Errorf("failed to create retry batch job manifest: %w", err)
 	}
 
-	createdJob, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Create(ctx, job, metav1.CreateOptions{})
+	// Validate retry job before submission
+	if err := s.validateJobSubmission(job); err != nil {
+		s.logger.Error("Retry job validation failed",
+			zap.String("job_name", jobName),
+			zap.Error(err))
+		return fmt.Errorf("retry job validation failed: %w", err)
+	}
+
+	// Submit retry job with enhanced error handling
+	createdJob, err := s.submitJobWithRetry(ctx, job)
 	if err != nil {
 		s.logger.Error("Failed to submit retry batch job to Kubernetes",
 			zap.String("job_name", jobName),
@@ -207,7 +231,9 @@ func (s *KubernetesBatchInvokerService) RetryBatchJob(ctx context.Context, filen
 	}
 
 	s.logger.Info("Retry batch job submitted successfully",
-		zap.String("job_name", createdJob.Name))
+		zap.String("job_name", createdJob.Name),
+		zap.String("namespace", createdJob.Namespace),
+		zap.String("uid", string(createdJob.UID)))
 
 	// Monitor job completion
 	if err := s.monitorJobCompletion(ctx, jobName); err != nil {
@@ -464,56 +490,431 @@ func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (
 }
 
 // monitorJobCompletion monitors a job until completion or timeout
+// Implements comprehensive job status monitoring with polling mechanism (Requirement 1.4, 2.1, 2.2)
 func (s *KubernetesBatchInvokerService) monitorJobCompletion(ctx context.Context, jobName string) error {
-	s.logger.Info("Monitoring job completion", zap.String("job_name", jobName))
+	s.logger.Info("Starting job monitoring with enhanced polling mechanism",
+		zap.String("job_name", jobName),
+		zap.Duration("timeout", s.timeout))
 
-	// Create context with timeout
+	// Create context with timeout for monitoring (Requirement 2.1: timeout handling)
 	monitorCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(5 * time.Second)
+	// Use adaptive polling intervals for better efficiency
+	initialInterval := 2 * time.Second
+	maxInterval := 10 * time.Second
+	currentInterval := initialInterval
+
+	ticker := time.NewTicker(currentInterval)
 	defer ticker.Stop()
+
+	startTime := time.Now()
+	consecutiveErrors := 0
+	maxConsecutiveErrors := 5
 
 	for {
 		select {
 		case <-monitorCtx.Done():
-			return fmt.Errorf("job monitoring timed out after %v", s.timeout)
+			// Enhanced timeout handling with detailed error information (Requirement 2.1)
+			elapsed := time.Since(startTime)
+			s.logger.Error("Job monitoring timed out",
+				zap.String("job_name", jobName),
+				zap.Duration("elapsed", elapsed),
+				zap.Duration("timeout", s.timeout))
+
+			// Try to get final job status for debugging
+			if finalJob, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Get(context.Background(), jobName, metav1.GetOptions{}); err == nil {
+				s.logJobStatusDetails(finalJob, "timeout")
+			}
+
+			return fmt.Errorf("job monitoring timed out after %v (elapsed: %v)", s.timeout, elapsed)
+
 		case <-ticker.C:
+			// Get current job status with error handling (Requirement 1.4: job status monitoring)
 			job, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Get(monitorCtx, jobName, metav1.GetOptions{})
 			if err != nil {
-				s.logger.Error("Failed to get job status", zap.String("job_name", jobName), zap.Error(err))
+				consecutiveErrors++
+				s.logger.Error("Failed to get job status",
+					zap.String("job_name", jobName),
+					zap.Error(err),
+					zap.Int("consecutive_errors", consecutiveErrors))
+
+				// If we have too many consecutive errors, fail the monitoring
+				if consecutiveErrors >= maxConsecutiveErrors {
+					return fmt.Errorf("failed to monitor job after %d consecutive API errors: %w", maxConsecutiveErrors, err)
+				}
 				continue
 			}
 
-			// Check job conditions
-			for _, condition := range job.Status.Conditions {
-				switch condition.Type {
-				case batchv1.JobComplete:
-					if condition.Status == corev1.ConditionTrue {
-						s.logger.Info("Job completed successfully",
-							zap.String("job_name", jobName),
-							zap.String("message", condition.Message))
-						return nil
+			// Reset error counter on successful API call
+			consecutiveErrors = 0
+
+			// Enhanced job completion detection (Requirement 2.2: job completion detection)
+			jobStatus := s.analyzeJobStatus(job)
+
+			switch jobStatus.Status {
+			case "succeeded":
+				s.logger.Info("Job completed successfully",
+					zap.String("job_name", jobName),
+					zap.Duration("elapsed", time.Since(startTime)),
+					zap.String("message", jobStatus.Message))
+				s.logJobStatusDetails(job, "success")
+				return nil
+
+			case "failed":
+				s.logger.Error("Job failed",
+					zap.String("job_name", jobName),
+					zap.Duration("elapsed", time.Since(startTime)),
+					zap.String("reason", jobStatus.Message))
+				s.logJobStatusDetails(job, "failed")
+
+				// Get pod logs for debugging if available
+				s.logPodDetailsForDebugging(monitorCtx, jobName)
+
+				return fmt.Errorf("job failed: %s", jobStatus.Message)
+
+			case "running":
+				// Job is actively running, log progress
+				s.logger.Debug("Job is running",
+					zap.String("job_name", jobName),
+					zap.Duration("elapsed", time.Since(startTime)),
+					zap.Int32("active_pods", job.Status.Active))
+
+				// Adjust polling interval for running jobs (less frequent polling)
+				if currentInterval < maxInterval {
+					currentInterval = time.Duration(float64(currentInterval) * 1.5)
+					if currentInterval > maxInterval {
+						currentInterval = maxInterval
 					}
-				case batchv1.JobFailed:
-					if condition.Status == corev1.ConditionTrue {
-						s.logger.Error("Job failed",
-							zap.String("job_name", jobName),
-							zap.String("reason", condition.Reason),
-							zap.String("message", condition.Message))
-						return fmt.Errorf("job failed: %s - %s", condition.Reason, condition.Message)
-					}
+					ticker.Reset(currentInterval)
 				}
+
+			case "pending":
+				// Job is pending, check for stuck conditions
+				elapsed := time.Since(startTime)
+				if elapsed > 5*time.Minute {
+					s.logger.Warn("Job has been pending for extended time",
+						zap.String("job_name", jobName),
+						zap.Duration("elapsed", elapsed))
+
+					// Log pod details to help debug why job is stuck
+					s.logPodDetailsForDebugging(monitorCtx, jobName)
+				}
+
+			default:
+				// Unknown status, log for debugging
+				s.logger.Debug("Job status update",
+					zap.String("job_name", jobName),
+					zap.String("status", jobStatus.Status),
+					zap.Duration("elapsed", time.Since(startTime)),
+					zap.Int32("active", job.Status.Active),
+					zap.Int32("succeeded", job.Status.Succeeded),
+					zap.Int32("failed", job.Status.Failed))
 			}
 
-			// Log current status
-			s.logger.Debug("Job status update",
-				zap.String("job_name", jobName),
-				zap.Int32("active", job.Status.Active),
-				zap.Int32("succeeded", job.Status.Succeeded),
-				zap.Int32("failed", job.Status.Failed))
+			// Check for job deadline exceeded (additional timeout detection)
+			if job.Status.StartTime != nil {
+				jobRuntime := time.Since(job.Status.StartTime.Time)
+				if jobRuntime > s.timeout {
+					s.logger.Error("Job exceeded maximum runtime",
+						zap.String("job_name", jobName),
+						zap.Duration("runtime", jobRuntime),
+						zap.Duration("max_timeout", s.timeout))
+					return fmt.Errorf("job exceeded maximum runtime: %v", jobRuntime)
+				}
+			}
 		}
 	}
+}
+
+// analyzeJobStatus analyzes job status and returns structured status information
+// Implements enhanced job completion detection (Requirement 2.2)
+func (s *KubernetesBatchInvokerService) analyzeJobStatus(job *batchv1.Job) *JobStatus {
+	status := &JobStatus{
+		JobName:   job.Name,
+		Status:    "unknown",
+		StartTime: time.Now(),
+		Message:   "Job status unknown",
+	}
+
+	// Set start time if available
+	if job.Status.StartTime != nil {
+		status.StartTime = job.Status.StartTime.Time
+	}
+
+	// Check job conditions for completion status
+	for _, condition := range job.Status.Conditions {
+		switch condition.Type {
+		case batchv1.JobComplete:
+			if condition.Status == corev1.ConditionTrue {
+				status.Status = "succeeded"
+				status.Message = fmt.Sprintf("Job completed successfully: %s", condition.Message)
+				if condition.LastTransitionTime.Time.After(status.StartTime) {
+					endTime := condition.LastTransitionTime.Time
+					status.EndTime = &endTime
+				}
+				return status
+			}
+
+		case batchv1.JobFailed:
+			if condition.Status == corev1.ConditionTrue {
+				status.Status = "failed"
+				status.Message = fmt.Sprintf("Job failed - %s: %s", condition.Reason, condition.Message)
+				if condition.LastTransitionTime.Time.After(status.StartTime) {
+					endTime := condition.LastTransitionTime.Time
+					status.EndTime = &endTime
+				}
+				return status
+			}
+		}
+	}
+
+	// Analyze job status based on pod counts
+	if job.Status.Active > 0 {
+		status.Status = "running"
+		status.Message = fmt.Sprintf("Job is running with %d active pod(s)", job.Status.Active)
+	} else if job.Status.Succeeded > 0 {
+		status.Status = "succeeded"
+		status.Message = fmt.Sprintf("Job succeeded with %d completed pod(s)", job.Status.Succeeded)
+	} else if job.Status.Failed > 0 {
+		status.Status = "failed"
+		status.Message = fmt.Sprintf("Job failed with %d failed pod(s)", job.Status.Failed)
+	} else {
+		status.Status = "pending"
+		status.Message = "Job is pending - no active, succeeded, or failed pods"
+	}
+
+	return status
+}
+
+// logJobStatusDetails logs comprehensive job status information for debugging
+// Supports enhanced error handling and status reporting (Requirement 2.1, 2.2)
+func (s *KubernetesBatchInvokerService) logJobStatusDetails(job *batchv1.Job, context string) {
+	s.logger.Info("Job status details",
+		zap.String("context", context),
+		zap.String("job_name", job.Name),
+		zap.String("namespace", job.Namespace),
+		zap.Int32("active_pods", job.Status.Active),
+		zap.Int32("succeeded_pods", job.Status.Succeeded),
+		zap.Int32("failed_pods", job.Status.Failed),
+		zap.Any("start_time", job.Status.StartTime),
+		zap.Any("completion_time", job.Status.CompletionTime),
+		zap.Int("conditions_count", len(job.Status.Conditions)))
+
+	// Log each condition for detailed debugging
+	for i, condition := range job.Status.Conditions {
+		s.logger.Debug("Job condition",
+			zap.String("job_name", job.Name),
+			zap.Int("condition_index", i),
+			zap.String("type", string(condition.Type)),
+			zap.String("status", string(condition.Status)),
+			zap.String("reason", condition.Reason),
+			zap.String("message", condition.Message),
+			zap.Time("last_transition", condition.LastTransitionTime.Time))
+	}
+}
+
+// logPodDetailsForDebugging retrieves and logs pod information for debugging failed or stuck jobs
+// Supports enhanced error handling and debugging (Requirement 2.1)
+func (s *KubernetesBatchInvokerService) logPodDetailsForDebugging(ctx context.Context, jobName string) {
+	// List pods associated with this job
+	labelSelector := fmt.Sprintf("job-name=%s", jobName)
+	pods, err := s.clientset.CoreV1().Pods(s.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+
+	if err != nil {
+		s.logger.Error("Failed to list pods for job debugging",
+			zap.String("job_name", jobName),
+			zap.Error(err))
+		return
+	}
+
+	s.logger.Info("Pod details for job debugging",
+		zap.String("job_name", jobName),
+		zap.Int("pod_count", len(pods.Items)))
+
+	for _, pod := range pods.Items {
+		s.logger.Debug("Pod status",
+			zap.String("job_name", jobName),
+			zap.String("pod_name", pod.Name),
+			zap.String("phase", string(pod.Status.Phase)),
+			zap.String("reason", pod.Status.Reason),
+			zap.String("message", pod.Status.Message),
+			zap.Any("start_time", pod.Status.StartTime))
+
+		// Log container statuses
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			s.logger.Debug("Container status",
+				zap.String("job_name", jobName),
+				zap.String("pod_name", pod.Name),
+				zap.String("container_name", containerStatus.Name),
+				zap.Bool("ready", containerStatus.Ready),
+				zap.Int32("restart_count", containerStatus.RestartCount))
+
+			// Log container state details
+			if containerStatus.State.Waiting != nil {
+				s.logger.Debug("Container waiting",
+					zap.String("job_name", jobName),
+					zap.String("pod_name", pod.Name),
+					zap.String("container_name", containerStatus.Name),
+					zap.String("reason", containerStatus.State.Waiting.Reason),
+					zap.String("message", containerStatus.State.Waiting.Message))
+			}
+
+			if containerStatus.State.Terminated != nil {
+				s.logger.Debug("Container terminated",
+					zap.String("job_name", jobName),
+					zap.String("pod_name", pod.Name),
+					zap.String("container_name", containerStatus.Name),
+					zap.Int32("exit_code", containerStatus.State.Terminated.ExitCode),
+					zap.String("reason", containerStatus.State.Terminated.Reason),
+					zap.String("message", containerStatus.State.Terminated.Message))
+			}
+		}
+
+		// Try to get recent pod logs for debugging (limit to avoid overwhelming logs)
+		if pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
+			s.getPodLogsForDebugging(ctx, pod.Name, jobName)
+		}
+	}
+}
+
+// getPodLogsForDebugging retrieves recent pod logs for debugging purposes
+// Supports enhanced error handling and debugging (Requirement 2.1)
+func (s *KubernetesBatchInvokerService) getPodLogsForDebugging(ctx context.Context, podName, jobName string) {
+	// Get logs with reasonable limits to avoid overwhelming the system
+	logOptions := &corev1.PodLogOptions{
+		TailLines: int64Ptr(50), // Last 50 lines
+		Container: "portfolio-cli",
+	}
+
+	logStream, err := s.clientset.CoreV1().Pods(s.config.Namespace).GetLogs(podName, logOptions).Stream(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get pod logs for debugging",
+			zap.String("job_name", jobName),
+			zap.String("pod_name", podName),
+			zap.Error(err))
+		return
+	}
+	defer logStream.Close()
+
+	// Read logs (with size limit to prevent memory issues)
+	logBytes := make([]byte, 4096) // 4KB limit
+	n, err := logStream.Read(logBytes)
+	if err != nil && err.Error() != "EOF" {
+		s.logger.Error("Failed to read pod logs",
+			zap.String("job_name", jobName),
+			zap.String("pod_name", podName),
+			zap.Error(err))
+		return
+	}
+
+	if n > 0 {
+		logContent := string(logBytes[:n])
+		s.logger.Debug("Pod logs for debugging",
+			zap.String("job_name", jobName),
+			zap.String("pod_name", podName),
+			zap.String("logs", logContent))
+	}
+}
+
+// submitJobWithRetry submits a job to Kubernetes API with retry logic
+// Implements enhanced job submission with error handling (Requirement 1.4, 2.1)
+func (s *KubernetesBatchInvokerService) submitJobWithRetry(ctx context.Context, job *batchv1.Job) (*batchv1.Job, error) {
+	maxRetries := 3
+	baseDelay := 1 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		createdJob, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Create(ctx, job, metav1.CreateOptions{})
+		if err == nil {
+			s.logger.Info("Job submitted successfully",
+				zap.String("job_name", job.Name),
+				zap.String("namespace", job.Namespace),
+				zap.Int("attempt", attempt+1))
+			return createdJob, nil
+		}
+
+		s.logger.Warn("Job submission failed, retrying",
+			zap.String("job_name", job.Name),
+			zap.Int("attempt", attempt+1),
+			zap.Int("max_retries", maxRetries),
+			zap.Error(err))
+
+		// Don't retry on certain errors (e.g., validation errors)
+		if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "forbidden") {
+			return nil, fmt.Errorf("job submission failed with non-retryable error: %w", err)
+		}
+
+		// Wait before retrying (exponential backoff)
+		if attempt < maxRetries-1 {
+			delay := time.Duration(attempt+1) * baseDelay
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+				// Continue to next attempt
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("job submission failed after %d attempts", maxRetries)
+}
+
+// validateJobSubmission validates job configuration before submission
+// Implements enhanced job submission validation (Requirement 1.4)
+func (s *KubernetesBatchInvokerService) validateJobSubmission(job *batchv1.Job) error {
+	if job == nil {
+		return fmt.Errorf("job is nil")
+	}
+
+	if job.Name == "" {
+		return fmt.Errorf("job name is required")
+	}
+
+	if job.Namespace == "" {
+		return fmt.Errorf("job namespace is required")
+	}
+
+	if len(job.Spec.Template.Spec.Containers) == 0 {
+		return fmt.Errorf("job must have at least one container")
+	}
+
+	container := job.Spec.Template.Spec.Containers[0]
+	if container.Image == "" {
+		return fmt.Errorf("container image is required")
+	}
+
+	// Validate volume mounts
+	hasNFSMount := false
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == "nfs-storage" {
+			hasNFSMount = true
+			break
+		}
+	}
+	if !hasNFSMount {
+		return fmt.Errorf("job must have NFS storage volume mount")
+	}
+
+	// Validate volumes
+	hasNFSVolume := false
+	for _, volume := range job.Spec.Template.Spec.Volumes {
+		if volume.Name == "nfs-storage" && volume.PersistentVolumeClaim != nil {
+			hasNFSVolume = true
+			break
+		}
+	}
+	if !hasNFSVolume {
+		return fmt.Errorf("job must have NFS PVC volume")
+	}
+
+	s.logger.Debug("Job validation passed",
+		zap.String("job_name", job.Name),
+		zap.String("namespace", job.Namespace),
+		zap.String("image", container.Image))
+
+	return nil
 }
 
 // Helper functions for creating Kubernetes pointers
@@ -569,6 +970,113 @@ func sanitizeLabelValue(value string) string {
 // isAlphanumeric checks if a rune is alphanumeric
 func isAlphanumeric(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+}
+
+// GetJobStatus retrieves the current status of a job
+// Implements job status monitoring capability (Requirement 1.4, 2.1)
+func (s *KubernetesBatchInvokerService) GetJobStatus(ctx context.Context, jobName string) (*JobStatus, error) {
+	if jobName == "" {
+		return nil, fmt.Errorf("job name is required")
+	}
+
+	job, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Get(ctx, jobName, metav1.GetOptions{})
+	if err != nil {
+		s.logger.Error("Failed to get job status",
+			zap.String("job_name", jobName),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get job status: %w", err)
+	}
+
+	status := s.analyzeJobStatus(job)
+
+	s.logger.Debug("Retrieved job status",
+		zap.String("job_name", jobName),
+		zap.String("status", status.Status),
+		zap.String("message", status.Message))
+
+	return status, nil
+}
+
+// CleanupCompletedJobs removes completed jobs older than specified duration
+// Implements job cleanup functionality for better resource management (Requirement 2.1)
+func (s *KubernetesBatchInvokerService) CleanupCompletedJobs(ctx context.Context, olderThan time.Duration) error {
+	s.logger.Info("Starting cleanup of completed jobs",
+		zap.Duration("older_than", olderThan))
+
+	// List all jobs in the namespace with our labels
+	labelSelector := "managed-by=globeco-allocation-service"
+	jobs, err := s.clientset.BatchV1().Jobs(s.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		s.logger.Error("Failed to list jobs for cleanup", zap.Error(err))
+		return fmt.Errorf("failed to list jobs for cleanup: %w", err)
+	}
+
+	cutoffTime := time.Now().Add(-olderThan)
+	deletedCount := 0
+	errorCount := 0
+
+	for _, job := range jobs.Items {
+		// Check if job is completed and old enough
+		if s.shouldCleanupJob(&job, cutoffTime) {
+			err := s.clientset.BatchV1().Jobs(s.config.Namespace).Delete(ctx, job.Name, metav1.DeleteOptions{
+				PropagationPolicy: &[]metav1.DeletionPropagation{metav1.DeletePropagationBackground}[0],
+			})
+			if err != nil {
+				s.logger.Error("Failed to delete job during cleanup",
+					zap.String("job_name", job.Name),
+					zap.Error(err))
+				errorCount++
+			} else {
+				s.logger.Debug("Deleted completed job",
+					zap.String("job_name", job.Name),
+					zap.Time("completion_time", job.Status.CompletionTime.Time))
+				deletedCount++
+			}
+		}
+	}
+
+	s.logger.Info("Job cleanup completed",
+		zap.Int("deleted_count", deletedCount),
+		zap.Int("error_count", errorCount),
+		zap.Int("total_jobs_checked", len(jobs.Items)))
+
+	if errorCount > 0 {
+		return fmt.Errorf("cleanup completed with %d errors out of %d jobs", errorCount, len(jobs.Items))
+	}
+
+	return nil
+}
+
+// shouldCleanupJob determines if a job should be cleaned up based on completion status and age
+func (s *KubernetesBatchInvokerService) shouldCleanupJob(job *batchv1.Job, cutoffTime time.Time) bool {
+	// Only cleanup completed jobs (succeeded or failed)
+	isCompleted := false
+	var completionTime *time.Time
+
+	// Check if job has completion time
+	if job.Status.CompletionTime != nil {
+		completionTime = &job.Status.CompletionTime.Time
+		isCompleted = true
+	} else {
+		// Check conditions for completion
+		for _, condition := range job.Status.Conditions {
+			if (condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed) &&
+				condition.Status == corev1.ConditionTrue {
+				isCompleted = true
+				completionTime = &condition.LastTransitionTime.Time
+				break
+			}
+		}
+	}
+
+	// Only cleanup if job is completed and older than cutoff time
+	if isCompleted && completionTime != nil && completionTime.Before(cutoffTime) {
+		return true
+	}
+
+	return false
 }
 
 // generateJobName creates a unique job name with timestamp

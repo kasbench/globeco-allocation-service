@@ -19,7 +19,7 @@
     - Add job naming with timestamps and proper labeling
     - _Requirements: 1.3, 6.2_
 
-  - [ ] 2.3 Implement job submission and monitoring logic
+  - [-] 2.3 Implement job submission and monitoring logic
     - Code job creation and submission to Kubernetes API
     - Implement job status monitoring with polling mechanism
     - Add timeout handling and job completion detection
