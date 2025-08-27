@@ -58,6 +58,11 @@ type SendResponse struct {
 	FileName       string `json:"fileName"`
 	Status         string `json:"status"`
 	Message        string `json:"message"`
+
+	// New fields for Kubernetes batch jobs
+	JobName       *string `json:"jobName,omitempty"`
+	JobStatus     *string `json:"jobStatus,omitempty"`
+	ExecutionMode string  `json:"executionMode"` // "direct" or "kubernetes"
 }
 
 // HealthResponse represents the health check response

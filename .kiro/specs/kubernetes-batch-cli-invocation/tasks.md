@@ -38,14 +38,14 @@
     - Create detailed error messages for debugging failed jobs
     - _Requirements: 2.1, 2.2, 7.2_
 
-- [ ] 4. Enhance execution service for dual-mode operation
-  - [ ] 4.1 Modify execution service to support both execution modes
+- [x] 4. Enhance execution service for dual-mode operation
+  - [x] 4.1 Modify execution service to support both execution modes
     - Update ExecutionService to integrate KubernetesBatchInvoker
     - Implement configuration-based selection between direct and Kubernetes execution
     - Add new SendWithKubernetes method for Kubernetes batch job flow
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 4.2 Implement file cleanup logic for successful jobs
+  - [x] 4.2 Implement file cleanup logic for successful jobs
     - Modify file cleanup to only delete files after successful job completion
     - Add job status validation before file deletion
     - Implement proper error handling for cleanup failures
