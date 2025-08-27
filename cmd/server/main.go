@@ -270,6 +270,7 @@ func setupRouterWithObservability(
 			r.Get("/{id}", executionHandler.GetExecution)
 			r.Post("/send", executionHandler.SendExecutions)
 			r.Post("/send/retry", executionHandler.RetryExecution)
+			r.Post("/send/delete_last", executionHandler.DeleteLastBatchHistory)
 		})
 	})
 

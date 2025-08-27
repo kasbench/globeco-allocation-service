@@ -265,6 +265,57 @@ func (h *ExecutionHandler) RetryExecution(w http.ResponseWriter, r *http.Request
 	h.writeJSONResponse(w, statusCode, response)
 }
 
+// DeleteLastBatchHistoryResponse represents the response for delete_last endpoint
+type DeleteLastBatchHistoryResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// DeleteLastBatchHistory handles POST /api/v1/executions/send/delete_last (Requirements 4.2, 4.3)
+func (h *ExecutionHandler) DeleteLastBatchHistory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	h.logger.Info("Processing delete last batch history request")
+
+	// Call service to delete last batch history record
+	err := h.executionService.DeleteLastBatchHistory(ctx)
+	if err != nil {
+		// Check for specific error types and provide appropriate HTTP status codes (Requirement 4.2, 4.3)
+		if strings.Contains(err.Error(), "no batch history records exist") {
+			h.logger.Error("No batch history records exist to delete", zap.Error(err))
+			h.writeErrorResponse(w, http.StatusNotFound, "no batch history records exist to delete", err)
+			return
+		}
+
+		if strings.Contains(err.Error(), "validation failed") {
+			h.logger.Error("Batch history deletion validation failed", zap.Error(err))
+			h.writeErrorResponse(w, http.StatusConflict, "validation failed - record is not the latest", err)
+			return
+		}
+
+		if strings.Contains(err.Error(), "was already deleted or does not exist") {
+			h.logger.Error("Batch history record was already deleted", zap.Error(err))
+			h.writeErrorResponse(w, http.StatusNotFound, "batch history record was already deleted", err)
+			return
+		}
+
+		// General deletion failure (Requirement 4.3: 500 error for deletion failure)
+		h.logger.Error("Failed to delete last batch history record", zap.Error(err))
+		h.writeErrorResponse(w, http.StatusInternalServerError, "failed to delete last batch history record", err)
+		return
+	}
+
+	// Success response (Requirement 4.2: 200 success code)
+	response := DeleteLastBatchHistoryResponse{
+		Status:  "success",
+		Message: "Last batch history record deleted successfully",
+	}
+
+	h.logger.Info("Last batch history record deleted successfully")
+
+	h.writeJSONResponse(w, http.StatusOK, response)
+}
+
 // writeJSONResponse writes a JSON response with the given status code
 func (h *ExecutionHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")

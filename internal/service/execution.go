@@ -672,6 +672,65 @@ func (s *ExecutionService) retryWithDirectCLI(ctx context.Context, filename stri
 	}, nil
 }
 
+// DeleteLastBatchHistory deletes the last batch history record (Requirements 4.1, 4.3)
+func (s *ExecutionService) DeleteLastBatchHistory(ctx context.Context) error {
+	s.logger.Info("Starting deletion of last batch history record")
+
+	// Step 1: Get the latest batch history record to validate it exists (Requirement 4.1: validation)
+	latestBatch, err := s.batchHistoryRepo.GetLatest(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get latest batch history record", zap.Error(err))
+
+		// Check if it's a "no records found" error
+		if err.Error() == "no batch history found" {
+			return fmt.Errorf("no batch history records exist to delete")
+		}
+
+		// Implement proper error handling for deletion failures (Requirement 4.3)
+		return fmt.Errorf("failed to retrieve latest batch history record: %w", err)
+	}
+
+	s.logger.Info("Found latest batch history record for deletion",
+		zap.Int("batch_id", latestBatch.ID),
+		zap.Time("start_time", latestBatch.StartTime))
+
+	// Step 2: Validate that we're only deleting the last record (Requirement 4.1: ensure only last record deleted)
+	// Additional validation: check if this is indeed the most recent record by comparing with max start time
+	maxStartTime, err := s.batchHistoryRepo.GetMaxStartTime(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get max start time for validation", zap.Error(err))
+		return fmt.Errorf("failed to validate latest record: %w", err)
+	}
+
+	// Ensure the record we're about to delete is actually the latest one
+	if !latestBatch.StartTime.Equal(maxStartTime) {
+		s.logger.Error("Latest batch record validation failed - timestamps don't match",
+			zap.Time("latest_start_time", latestBatch.StartTime),
+			zap.Time("max_start_time", maxStartTime))
+		return fmt.Errorf("validation failed: record is not the latest batch history record")
+	}
+
+	// Step 3: Delete the last batch history record (Requirement 4.1)
+	if err := s.batchHistoryRepo.Delete(ctx, latestBatch.ID); err != nil {
+		s.logger.Error("Failed to delete last batch history record",
+			zap.Int("batch_id", latestBatch.ID),
+			zap.Error(err))
+
+		// Implement proper error handling for deletion failures (Requirement 4.3)
+		if err.Error() == fmt.Sprintf("batch history not found: %d", latestBatch.ID) {
+			return fmt.Errorf("batch history record was already deleted or does not exist")
+		}
+
+		return fmt.Errorf("failed to delete batch history record: %w", err)
+	}
+
+	s.logger.Info("Successfully deleted last batch history record",
+		zap.Int("deleted_batch_id", latestBatch.ID),
+		zap.Time("deleted_start_time", latestBatch.StartTime))
+
+	return nil
+}
+
 // stringPtr returns a pointer to the given string value
 func stringPtr(s string) *string {
 	return &s

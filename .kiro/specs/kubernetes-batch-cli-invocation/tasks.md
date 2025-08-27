@@ -64,14 +64,14 @@
     - Implement proper HTTP status code responses for success/failure
     - _Requirements: 3.3, 3.4_
 
-- [ ] 6. Implement batch history deletion functionality
-  - [ ] 6.1 Create batch history deletion service method
+- [x] 6. Implement batch history deletion functionality
+  - [x] 6.1 Create batch history deletion service method
     - Implement DeleteLastBatchHistory method in ExecutionService
     - Add validation to ensure only the last record is deleted
     - Implement proper error handling for deletion failures
     - _Requirements: 4.1, 4.3_
 
-  - [ ] 6.2 Create batch history deletion API endpoint
+  - [x] 6.2 Create batch history deletion API endpoint
     - Implement POST /api/v1/executions/send/delete_last endpoint handler
     - Add proper HTTP status code responses for success/failure scenarios
     - Implement validation and error handling for deletion operations
