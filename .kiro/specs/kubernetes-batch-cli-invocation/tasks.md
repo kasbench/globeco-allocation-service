@@ -90,7 +90,7 @@
     - Update existing send endpoint documentation to include new response fields
     - _Requirements: 5.1, 5.2_
 
-  - [ ] 8.2 Update README.md documentation
+  - [x] 8.2 Update README.md documentation
     - Document new API endpoints with usage examples
     - Add configuration documentation for Kubernetes batch job settings
     - Include RBAC setup instructions and deployment notes

@@ -22,7 +22,7 @@ data:
   TRADE_SERVICE_URL: "http://globeco-trade-service:8082"
   
   # File system configuration
-  OUTPUT_DIR: "/tmp/files"
+  OUTPUT_DIR: "/data"
   CLI_COMMAND: "kubectl run --rm -i --tty portfolio-cli --image=globeco-portfolio-accounting-service-cli:latest --restart=Never -- process --file /data/transactions.csv --output-dir /data"
   
   # Feature flags (simplified for dev)

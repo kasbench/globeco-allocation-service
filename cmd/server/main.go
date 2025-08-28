@@ -85,6 +85,10 @@ func main() {
 	tradeClient := service.NewTradeServiceClient(cfg.TradeServiceURL, logger)
 	tradeClient.SetRetryConfig(cfg.RetryMaxAttempts, time.Duration(cfg.RetryBaseDelay)*time.Millisecond)
 
+	// Debug: Log the file cleanup configuration
+	logger.Info("File cleanup configuration",
+		zap.Bool("file_cleanup_enabled", cfg.FileCleanupEnabled))
+
 	executionService := service.NewExecutionService(
 		executionRepo,
 		batchHistoryRepo,

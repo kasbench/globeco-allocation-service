@@ -327,6 +327,18 @@ func (s *KubernetesBatchInvokerService) ValidateKubernetesAccess() error {
 	return s.enhanceValidateKubernetesAccess()
 }
 
+// buildCLIArgs constructs the CLI arguments based on the job configuration
+func buildCLIArgs(config *BatchJobConfig) []string {
+	args := []string{
+		"process",
+		"--file", fmt.Sprintf("/data/%s", config.Filename),
+		"--output-dir", config.OutputDir,
+		"--config", "/etc/config/config.yaml",
+	}
+
+	return args
+}
+
 // createBatchJob creates a Kubernetes Job manifest for Portfolio Accounting CLI
 // This method implements dynamic job manifest generation with proper volume mounts,
 // job naming with timestamps, and comprehensive labeling as per requirements 1.3 and 6.2
@@ -367,18 +379,13 @@ func (s *KubernetesBatchInvokerService) createBatchJob(config *BatchJobConfig) (
 		Name:    "portfolio-cli",
 		Image:   config.Image,
 		Command: []string{"/usr/local/bin/cli"},
-		Args: []string{
-			"process",
-			"--file", fmt.Sprintf("/data/%s", config.Filename),
-			"--output-dir", config.OutputDir,
-			"--config", "/etc/config/config.yaml",
-		},
+		Args:    buildCLIArgs(config),
 		// Requirement 6.2: Proper volume mounts for NFS access
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      "nfs-storage",
 				MountPath: "/data",
-				ReadOnly:  false, // CLI needs write access for output files
+				ReadOnly:  false, // Portfolio accounting service needs write access for output and error files
 			},
 			{
 				Name:      "cli-config",

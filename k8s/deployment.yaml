@@ -16,6 +16,7 @@ spec:
       labels:
         app: globeco-allocation-service
     spec:
+      serviceAccountName: globeco-allocation-service
       containers:
       - name: allocation-service
         image: kasbench/globeco-allocation-service-server:latest

@@ -1,0 +1,19 @@
+[
+  {
+    "executionServiceId": 99999,
+    "isOpen": false,
+    "executionStatus": "FILLED",
+    "tradeType": "BUY",
+    "destination": "NYSE",
+    "securityId": "GOOGL-US",
+    "ticker": "GOOGL",
+    "quantity": 50,
+    "limitPrice": 2850.00,
+    "receivedTimestamp": "2024-01-16T14:30:00Z",
+    "sentTimestamp": "2024-01-16T14:30:05Z",
+    "lastFillTimestamp": "2024-01-16T14:30:10Z",
+    "quantityFilled": 50,
+    "totalAmount": 140000.00,
+    "averagePrice": 2800.00
+  }
+]

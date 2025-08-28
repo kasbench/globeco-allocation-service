@@ -349,6 +349,10 @@ func (s *ExecutionService) SendWithKubernetes(ctx context.Context) (*domain.Send
 	}
 
 	// Step 6: Cleanup file only after successful job completion (Requirement 2.3, 2.4)
+	// The allocation service owns the file lifecycle and handles cleanup
+	s.logger.Debug("Checking file cleanup configuration",
+		zap.Bool("file_cleanup_enabled", s.config.FileCleanupEnabled),
+		zap.String("filename", filename))
 	if s.config.FileCleanupEnabled {
 		// Validate job status before file deletion (Requirement 2.3)
 		if err := s.ValidateJobStatusForCleanup(ctx, jobName); err != nil {
@@ -357,11 +361,13 @@ func (s *ExecutionService) SendWithKubernetes(ctx context.Context) (*domain.Send
 				zap.String("filename", filename),
 				zap.Error(err))
 		} else {
-			// Only cleanup if job status validation passes
+			// Only cleanup if job status validation passes - allocation service owns file cleanup
 			if err := s.cleanupFileAfterSuccessfulJob(filename); err != nil {
 				s.logger.Warn("File cleanup failed after successful job", zap.Error(err))
 			}
 		}
+	} else {
+		s.logger.Info("File cleanup disabled, keeping file", zap.String("filename", filename))
 	}
 
 	s.logger.Info("Execution send process completed successfully with Kubernetes batch job",
@@ -449,6 +455,9 @@ func (s *ExecutionService) sendWithDirectCLI(ctx context.Context) (*domain.SendR
 	}
 
 	// Step 6: Cleanup file if enabled (legacy behavior)
+	s.logger.Debug("Checking file cleanup configuration (legacy)",
+		zap.Bool("file_cleanup_enabled", s.config.FileCleanupEnabled),
+		zap.String("filename", filename))
 	if s.config.FileCleanupEnabled {
 		if err := s.fileGenerator.CleanupFile(filename, true); err != nil {
 			s.logger.Warn("File cleanup failed", zap.Error(err))
@@ -600,6 +609,7 @@ func (s *ExecutionService) retryWithKubernetes(ctx context.Context, filename str
 	}
 
 	// Step 2: Handle file cleanup for successful retry (same logic as regular execution)
+	// The allocation service owns the file lifecycle and handles cleanup
 	if s.config.FileCleanupEnabled {
 		// Validate job status before file deletion
 		if err := s.ValidateJobStatusForCleanup(ctx, jobName); err != nil {
@@ -608,11 +618,13 @@ func (s *ExecutionService) retryWithKubernetes(ctx context.Context, filename str
 				zap.String("filename", filename),
 				zap.Error(err))
 		} else {
-			// Only cleanup if job status validation passes
+			// Only cleanup if job status validation passes - allocation service owns file cleanup
 			if err := s.cleanupFileAfterSuccessfulJob(filename); err != nil {
 				s.logger.Warn("File cleanup failed after successful retry job", zap.Error(err))
 			}
 		}
+	} else {
+		s.logger.Info("File cleanup disabled, keeping file", zap.String("filename", filename))
 	}
 
 	s.logger.Info("Retry execution completed successfully with Kubernetes batch job",
@@ -653,6 +665,9 @@ func (s *ExecutionService) retryWithDirectCLI(ctx context.Context, filename stri
 	}
 
 	// Step 2: Handle file cleanup for successful retry (legacy behavior)
+	s.logger.Debug("Checking file cleanup configuration (retry)",
+		zap.Bool("file_cleanup_enabled", s.config.FileCleanupEnabled),
+		zap.String("filename", filename))
 	if s.config.FileCleanupEnabled {
 		if err := s.fileGenerator.CleanupFile(filename, true); err != nil {
 			s.logger.Warn("File cleanup failed after successful retry", zap.Error(err))

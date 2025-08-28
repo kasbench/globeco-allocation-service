@@ -164,7 +164,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("observability.enhanced_metrics_enable_failsafe_logging", false)
 
 	// Kubernetes batch job defaults
-	v.SetDefault("kubernetes_batch.enabled", false)
+	v.SetDefault("kubernetes_batch.enabled", true)
 	v.SetDefault("kubernetes_batch.namespace", "globeco")
 	v.SetDefault("kubernetes_batch.cli_image", "kasbench/globeco-portfolio-accounting-service-cli:latest")
 	v.SetDefault("kubernetes_batch.job_timeout_seconds", 1800) // 30 minutes
