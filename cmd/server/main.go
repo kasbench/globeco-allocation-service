@@ -147,8 +147,8 @@ func main() {
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 35 * time.Minute, // Allow for long-running Kubernetes job operations
 		IdleTimeout:  60 * time.Second,
 	}
 
