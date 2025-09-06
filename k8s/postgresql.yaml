@@ -38,7 +38,7 @@ spec:
               chown -R 999:999 /var/lib/postgresql/data/pgdata
               chmod 700 /var/lib/postgresql/data/pgdata
           volumeMounts:
-            - name: globeco-allocation-service-postgredb-storage
+            - name: postgres-storage
               mountPath: /var/lib/postgresql/data
       containers:
         - name: globeco-allocation-service-postgresql
@@ -55,17 +55,51 @@ spec:
             - "-c"
             - "listen_addresses=0.0.0.0"
           volumeMounts:
-            - name: globeco-allocation-service-postgredb-storage
+            - name: postgres-storage
               mountPath: /var/lib/postgresql/data
-  volumeClaimTemplates:
-    - metadata:
-        name: globeco-allocation-service-postgredb-storage
-      spec:
-        accessModes: [ "ReadWriteOnce" ]
-        storageClassName: local-storage
-        resources:
-          requests:
-            storage: 10Gi
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: allocation-service-postgres-pvc
+  template:
+    metadata:
+      labels:
+        app: globeco-allocation-service-postgresql
+    spec:
+      initContainers:
+        - name: init-postgres-data
+          image: busybox:1.35
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mkdir -p /var/lib/postgresql/data/pgdata
+              chown -R 999:999 /var/lib/postgresql/data/pgdata
+              chmod 700 /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: globeco-allocation-service-postgresql
+          image: postgres:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "trust"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          args:
+            - "-c"
+            - "listen_addresses=0.0.0.0"
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: allocation-service-postgres-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -79,4 +113,21 @@ spec:
     - protocol: TCP
       port: 5432
       targetPort: 5432
-  type: ClusterIP 
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: allocation-service-postgres-pvc
+  namespace: globeco
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  resources:
+    requests:
+      storage: 10Gi
+  selector:
+    matchLabels:
+      app: allocation-postgres
+      type: local 
