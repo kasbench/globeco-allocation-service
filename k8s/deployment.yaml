@@ -34,12 +34,12 @@ spec:
         #       name: allocation-service-secrets
         #       key: database-password
         volumeMounts:
-        - name: globeco-allocation-service-shared-files
-          mountPath: /usr/local/share/files
-        - name: nfs-storage
-          mountPath: /data
-        - name: tmp
-          mountPath: /tmp
+        # - name: globeco-allocation-service-shared-files
+        #   mountPath: /usr/local/share/files
+        # - name: nfs-storage
+        #   mountPath: /data
+        # - name: tmp
+        #   mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /healthz
@@ -63,14 +63,14 @@ spec:
         # - name: tmp-files
         #   mountPath: /tmp/files
       volumes:
-      - name: globeco-allocation-service-shared-files
-        persistentVolumeClaim:
-          claimName: globeco-allocation-service-shared-files-pvc
+      # - name: globeco-allocation-service-shared-files
+      #   persistentVolumeClaim:
+      #     claimName: globeco-allocation-service-shared-files-pvc
       - name: tmp
         emptyDir:
           sizeLimit: 1Gi
-      - name: nfs-storage
-        persistentVolumeClaim:
-          claimName: nfs-pvc
+      # - name: nfs-storage
+      #   persistentVolumeClaim:
+      #     claimName: nfs-pvc
       
       
