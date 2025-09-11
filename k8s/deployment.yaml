@@ -27,7 +27,18 @@ spec:
         envFrom:
         - configMapRef:
             name: allocation-service-config-dev
-        # env:
+        env:
+        # Inject the node IP from the Downward API
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        # Point OTEL exporter to the local collector on the same node
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "$(NODE_IP):4317"
+        # Also override the observability endpoint for consistency
+        - name: OBSERVABILITY_OTEL_ENDPOINT
+          value: "$(NODE_IP):4317"
         # - name: DATABASE_PASSWORD
         #   valueFrom:
         #     secretKeyRef:
