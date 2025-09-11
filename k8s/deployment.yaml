@@ -28,22 +28,52 @@ spec:
         - configMapRef:
             name: allocation-service-config-dev
         env:
-        # Inject the node IP from the Downward API
-        - name: NODE_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.hostIP
-        # Point OTEL exporter to the local collector on the same node
-        - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "$(NODE_IP):4317"
-        # Also override the observability endpoint for consistency
-        - name: OBSERVABILITY_OTEL_ENDPOINT
-          value: "$(NODE_IP):4317"
-        # - name: DATABASE_PASSWORD
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: allocation-service-secrets
-        #       key: database-password
+        # Inject the node and pod metadata from the Downward API
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: MY_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          # Inject the node IP from the Downward API
+          - name: NODE_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+
+          # Point OTEL exporter to the local collector on the same node
+          # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          #   value: "$(NODE_IP):4317"
+          
+          - name: OBSERVABILITY_OTEL_ENDPOINT
+            value: "$(NODE_IP):4317"
+
+          # Define standard service identity attributes
+          - name: OTEL_SERVICE_NAME
+            value: "globeco-allocation-service"  # Changed to match container name
+          - name: OTEL_SERVICE_NAMESPACE
+            value: "globeco"
+          
+          # Inject Kubernetes metadata as resource attributes for k8sattributes processor
+          - name: OTEL_RESOURCE_ATTRIBUTES
+            value: >-
+              k8s.pod.ip=$(MY_POD_IP),
+              k8s.pod.name=$(MY_POD_NAME),
+              k8s.node.name=$(MY_NODE_NAME),
+              k8s.namespace.name=$(MY_NAMESPACE)
+
+          
+
         volumeMounts:
         # - name: globeco-allocation-service-shared-files
         #   mountPath: /usr/local/share/files

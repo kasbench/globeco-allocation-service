@@ -135,7 +135,7 @@ func setDefaults(v *viper.Viper) {
 
 	// OpenTelemetry defaults (GlobeCo standards)
 	v.SetDefault("observability.otel_enabled", true)
-	v.SetDefault("observability.otel_endpoint", "otel-collector-collector.monitoring.svc.cluster.local:4317")
+	v.SetDefault("observability.otel_endpoint", "otel-collector-daemonset-collector.monitoring.svc.cluster.local:4317")
 	v.SetDefault("observability.otel_service_name", "globeco-allocation-service")
 	v.SetDefault("observability.otel_service_version", "1.0.0")
 	v.SetDefault("observability.otel_service_namespace", "globeco")
