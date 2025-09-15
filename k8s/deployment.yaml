@@ -18,7 +18,7 @@ spec:
     spec:
       serviceAccountName: globeco-allocation-service
       containers:
-      - name: allocation-service
+      - name: globeco-allocation-service
         image: kasbench/globeco-allocation-service-server:latest
         imagePullPolicy: Always
         ports:
