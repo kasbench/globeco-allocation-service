@@ -99,7 +99,7 @@ spec:
             cpu: "500m"
           limits:
             memory: "2000Mi"
-            cpu: "2000m"
+            cpu: "500m"
         # volumeMounts:
         # - name: tmp-files
         #   mountPath: /tmp/files

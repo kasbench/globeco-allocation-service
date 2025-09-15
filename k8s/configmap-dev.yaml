@@ -8,7 +8,7 @@ metadata:
 data:
   # Application configuration
   PORT: "8089"
-  LOG_LEVEL: "debug"
+  LOG_LEVEL: "info"
   
   # Database configuration
   DATABASE_HOST: "globeco-allocation-service-postgresql"

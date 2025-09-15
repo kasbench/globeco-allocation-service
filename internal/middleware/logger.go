@@ -30,7 +30,7 @@ func Logger(logger *zap.Logger) func(next http.Handler) http.Handler {
 			)
 
 			// Log request start
-			reqLogger.Info("Request started")
+			reqLogger.Debug("Request started")
 
 			// Process request
 			next.ServeHTTP(ww, r)
@@ -39,7 +39,7 @@ func Logger(logger *zap.Logger) func(next http.Handler) http.Handler {
 			duration := time.Since(start)
 
 			// Log request completion
-			reqLogger.Info("Request completed",
+			reqLogger.Debug("Request completed",
 				zap.Int("status", ww.Status()),
 				zap.Int("bytes", ww.BytesWritten()),
 				zap.Duration("duration", duration),
