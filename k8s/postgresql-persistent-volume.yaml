@@ -3,7 +3,7 @@ kind: PersistentVolume
 metadata:
   name: allocation-service-postgres-pv
   labels:
-    app: allocation-postgres
+    app: allocation-service-postgres
     type: local
 spec:
   capacity:
