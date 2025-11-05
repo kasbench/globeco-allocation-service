@@ -61,8 +61,8 @@ spec:
               mountPath: /mnt/postgres-data
       containers:
         - name: globeco-allocation-service-postgresql
-          image: postgres:latest
-          imagePullPolicy: Always
+          image: postgres:18.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5432
           env:

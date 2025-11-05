@@ -19,8 +19,8 @@ spec:
       serviceAccountName: globeco-allocation-service
       containers:
       - name: globeco-allocation-service
-        image: kasbench/globeco-allocation-service-server:latest
-        imagePullPolicy: Always
+        image: kasbench/globeco-allocation-service-server:1.0.0
+        imagePullPolicy: IfNotPresent 
         ports:
         - containerPort: 8089
           name: http
