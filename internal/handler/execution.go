@@ -142,7 +142,7 @@ func (h *ExecutionHandler) CreateExecutions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	h.logger.Info("Creating execution batch", zap.Int("batch_size", len(executions)))
+	h.logger.Debug("Creating execution batch", zap.Int("batch_size", len(executions)))
 
 	// Call service
 	response, err := h.executionService.CreateBatch(ctx, executions)

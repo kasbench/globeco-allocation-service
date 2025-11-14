@@ -62,7 +62,7 @@ func (r *ExecutionRepository) Create(ctx context.Context, execution *domain.Exec
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "database insert failed")
-		r.logger.Error("Failed to create execution with OpenTelemetry tracing", 
+		r.logger.Error("Failed to create execution with OpenTelemetry tracing",
 			zap.Error(err),
 			zap.String("trace_id", span.SpanContext().TraceID().String()),
 			zap.String("span_id", span.SpanContext().SpanID().String()))
@@ -86,8 +86,8 @@ func (r *ExecutionRepository) Create(ctx context.Context, execution *domain.Exec
 	span.SetAttributes(attribute.Int("execution.id", execution.ID))
 	span.SetStatus(codes.Ok, "execution created successfully")
 
-	r.logger.Info("Created execution with OpenTelemetry tracing", 
-		zap.Int("id", execution.ID), 
+	r.logger.Debug("Created execution with OpenTelemetry tracing",
+		zap.Int("id", execution.ID),
 		zap.Int("execution_service_id", execution.ExecutionServiceID),
 		zap.String("trace_id", span.SpanContext().TraceID().String()),
 		zap.String("span_id", span.SpanContext().SpanID().String()))
@@ -121,8 +121,8 @@ func (r *ExecutionRepository) GetByID(ctx context.Context, id int) (*domain.Exec
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "database select failed")
-		r.logger.Error("Failed to get execution by ID with OpenTelemetry tracing", 
-			zap.Int("id", id), 
+		r.logger.Error("Failed to get execution by ID with OpenTelemetry tracing",
+			zap.Int("id", id),
 			zap.Error(err),
 			zap.String("trace_id", span.SpanContext().TraceID().String()))
 		return nil, fmt.Errorf("failed to get execution: %w", err)

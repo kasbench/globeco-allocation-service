@@ -80,7 +80,7 @@ func (c *TradeServiceClient) GetExecutionByServiceID(ctx context.Context, execut
 
 	span.SetAttributes(attribute.String("http.url", u.String()))
 
-	c.logger.Info("Calling Trade Service with OpenTelemetry tracing",
+	c.logger.Debug("Calling Trade Service with OpenTelemetry tracing",
 		zap.String("url", u.String()),
 		zap.Int("execution_service_id", executionServiceID),
 		zap.String("trace_id", span.SpanContext().TraceID().String()),
@@ -124,7 +124,7 @@ func (c *TradeServiceClient) executeWithRetry(ctx context.Context, method, url s
 		if err == nil {
 			// Record successful call metrics
 			duration := time.Since(startTime)
-			c.logger.Info("Trade Service call successful - metrics sent to OpenTelemetry collector",
+			c.logger.Debug("Trade Service call successful - metrics sent to OpenTelemetry collector",
 				zap.String("method", method),
 				zap.Duration("total_duration", duration),
 				zap.Int("attempts", attempt+1))
@@ -196,7 +196,7 @@ func (c *TradeServiceClient) executeRequest(ctx context.Context, method, url str
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	c.logger.Info("Trade Service call successful",
+	c.logger.Debug("Trade Service call successful",
 		zap.Int("executions_count", len(response.Executions)))
 
 	return &response, nil

@@ -74,7 +74,7 @@ func (s *ExecutionService) CreateBatch(ctx context.Context, executions []domain.
 		return nil, fmt.Errorf("batch size exceeds maximum of 100 executions")
 	}
 
-	s.logger.Info("Processing execution batch", zap.Int("batch_size", len(executions)))
+	s.logger.Debug("Processing execution batch", zap.Int("batch_size", len(executions)))
 
 	response := &domain.BatchCreateResponse{
 		Results: make([]domain.ExecutionResult, 0, len(executions)),
@@ -94,7 +94,7 @@ func (s *ExecutionService) CreateBatch(ctx context.Context, executions []domain.
 		}
 	}
 
-	s.logger.Info("Batch processing completed",
+	s.logger.Debug("Batch processing completed",
 		zap.Int("processed", response.ProcessedCount),
 		zap.Int("skipped", response.SkippedCount),
 		zap.Int("errors", response.ErrorCount))
@@ -153,7 +153,7 @@ func (s *ExecutionService) processExecution(ctx context.Context, executionDTO do
 
 	result.Status = "created"
 	result.ExecutionID = &execution.ID
-	s.logger.Info("Execution created successfully",
+	s.logger.Debug("Execution created successfully",
 		zap.Int("id", execution.ID),
 		zap.Int("execution_service_id", execution.ExecutionServiceID))
 
