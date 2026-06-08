@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-allocation-service-postgresql-headless
+  namespace: globeco
+spec:
+  clusterIP: None
+  selector:
+    app: globeco-allocation-service-postgresql
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-allocation-service-postgresql
+  namespace: globeco
+spec:
+  selector:
+    app: globeco-allocation-service-postgresql
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: globeco-allocation-service-postgresql
+  namespace: globeco
+spec:
+  serviceName: globeco-allocation-service-postgresql-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globeco-allocation-service-postgresql
+  template:
+    metadata:
+      labels:
+        app: globeco-allocation-service-postgresql
+    spec:
+      initContainers:
+        - name: init-postgres-data
+          image: busybox:1.35
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mkdir -p /mnt/postgres-data/pgdata
+              chown -R 999:999 /mnt/postgres-data
+              chmod 755 /mnt/postgres-data
+              chmod 700 /mnt/postgres-data/pgdata
+          volumeMounts:
+            - name: globeco-allocation-service-postgresdb-storage
+              mountPath: /mnt/postgres-data
+      containers:
+        - name: globeco-allocation-service-postgresql
+          image: postgres:18.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "trust"
+            - name: PGDATA
+              value: "/mnt/postgres-data/pgdata"
+          args:
+            - "-c"
+            - "listen_addresses=0.0.0.0"
+          volumeMounts:
+            - name: globeco-allocation-service-postgresdb-storage
+              mountPath: /mnt/postgres-data
+      volumes:
+        - name: globeco-allocation-service-postgresdb-storage
+          persistentVolumeClaim:
+            claimName: allocation-service-postgresql-pvc

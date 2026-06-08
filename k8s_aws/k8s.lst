@@ -1,0 +1,5 @@
+configmap_aws.yaml
+postgresql-pvc.yaml
+postgresql.yaml
+service-aws.yaml
+deployment.yaml
