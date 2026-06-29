@@ -19,7 +19,7 @@ spec:
       serviceAccountName: globeco-allocation-service
       containers:
       - name: globeco-allocation-service
-        image: kasbench/globeco-allocation-service-server:1.0.1
+        image: kasbench/globeco-allocation-service-server:1.0.2
         imagePullPolicy: IfNotPresent 
         ports:
         - containerPort: 8089
@@ -85,14 +85,26 @@ spec:
           httpGet:
             path: /healthz
             port: http
-          initialDelaySeconds: 30
-          periodSeconds: 30
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /readyz
             port: http
-          initialDelaySeconds: 30
-          periodSeconds: 30
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 6
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 6
         resources:
           requests:
             memory: "2000Mi"
