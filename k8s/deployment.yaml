@@ -85,7 +85,7 @@ spec:
           httpGet:
             path: /healthz
             port: http
-          initialDelaySeconds: 10
+          # initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 10
           failureThreshold: 6
@@ -93,7 +93,7 @@ spec:
           httpGet:
             path: /readyz
             port: http
-          initialDelaySeconds: 10
+          # initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 10
           failureThreshold: 6
@@ -101,10 +101,10 @@ spec:
           httpGet:
             path: /healthz
             port: http
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 10
-          failureThreshold: 6
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 12
         resources:
           requests:
             memory: "2000Mi"
