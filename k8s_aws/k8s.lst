@@ -1,4 +1,4 @@
-configmap_aws.yaml
+configmap-aws.yaml
 postgresql-pvc.yaml
 postgresql.yaml
 service-aws.yaml
