@@ -67,12 +67,10 @@ spec:
               k8s.node.name=$(MY_NODE_NAME),
               k8s.namespace.name=$(MY_NAMESPACE)
         volumeMounts:
-        # - name: globeco-allocation-service-shared-files
-        #   mountPath: /usr/local/share/files
-        # - name: nfs-storage
-        #   mountPath: /data
-        # - name: tmp
-        #   mountPath: /tmp
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /healthz
@@ -108,6 +106,9 @@ spec:
         # - name: tmp-files
         #   mountPath: /tmp/files
       volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: allocation-service-data
       - name: tmp
         emptyDir:
           sizeLimit: 1Gi

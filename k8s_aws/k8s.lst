@@ -3,5 +3,6 @@ postgresql-pvc.yaml
 postgresql.yaml
 service-aws.yaml
 +30
+pvc-data.yaml
 deployment.yaml
 hpa.yaml
