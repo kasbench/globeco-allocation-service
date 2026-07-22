@@ -108,8 +108,10 @@ spec:
         #   mountPath: /tmp/files
       volumes:
       - name: data
-        persistentVolumeClaim:
-          claimName: allocation-service-data
+        emptyDir:
+          sizeLimit: 5Gi
+        # persistentVolumeClaim:
+        #   claimName: allocation-service-data
       - name: tmp
         emptyDir:
           sizeLimit: 1Gi
