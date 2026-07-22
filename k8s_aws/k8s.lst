@@ -1,3 +1,4 @@
+rbac.yaml
 configmap-aws.yaml
 postgresql-pvc.yaml
 postgresql.yaml

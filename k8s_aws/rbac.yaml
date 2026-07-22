@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: allocation-service-sa
+  namespace: globeco
+  labels:
+    app: globeco-allocation-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: allocation-service-role
+  namespace: globeco
+  labels:
+    app: globeco-allocation-service
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: allocation-service-rolebinding
+  namespace: globeco
+  labels:
+    app: globeco-allocation-service
+subjects:
+- kind: ServiceAccount
+  name: allocation-service-sa
+  namespace: globeco
+roleRef:
+  kind: Role
+  name: allocation-service-role
+  apiGroup: rbac.authorization.k8s.io
