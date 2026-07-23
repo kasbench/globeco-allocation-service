@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-static-sc
+provisioner: efs.csi.aws.com
+# Reclaim policy can be Retain or Delete. 
+# For static EFS, Retain ensures Kubernetes won't touch the underlying EFS data.
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

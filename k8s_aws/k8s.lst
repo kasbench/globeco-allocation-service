@@ -4,6 +4,10 @@ postgresql-pvc.yaml
 postgresql.yaml
 service-aws.yaml
 +30
+efs-static-sc.yaml
+pv-data.yaml
 pvc-data.yaml
 deployment.yaml
 hpa.yaml
+rbac.yaml
+portfolio-cli-configmap.yaml

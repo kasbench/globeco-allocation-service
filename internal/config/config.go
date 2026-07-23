@@ -170,7 +170,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("kubernetes_batch.job_timeout_seconds", 1800) // 30 minutes
 	v.SetDefault("kubernetes_batch.job_retry_limit", 2)
 	v.SetDefault("kubernetes_batch.service_account_name", "globeco-allocation-service")
-	v.SetDefault("kubernetes_batch.nfs_pvc_name", "nfs-pvc")
+	v.SetDefault("kubernetes_batch.nfs_pvc_name", "globeco-efs-pvc")
 }
 
 // DatabaseConnectionString returns the PostgreSQL connection string

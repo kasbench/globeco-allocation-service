@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portfolio-cli-config
+  namespace: globeco
+  labels:
+    app: portfolio-accounting-cli
+    component: config
+data:
+  config.yaml: |
+    # Portfolio Accounting CLI Configuration
+    server:
+      host: "globeco-allocation-service"
+      port: 8089
+      timeout: "30s"
+    
+    processing:
+      batch_size: 1000
+      max_retries: 3
+      retry_delay: "5s"
+    
+    output:
+      format: "csv"
+      compression: false
+      include_headers: true
+    
+    logging:
+      level: "info"
+      format: "json"
+      enable_caller: true
+    
+    # File processing settings
+    files:
+      input_dir: "/data"
+      output_dir: "/data"
+      temp_dir: "/tmp"
+    
+    # Resource limits for processing
+    limits:
+      max_file_size: "100MB"
+      max_records: 100000
+      processing_timeout: "10m"

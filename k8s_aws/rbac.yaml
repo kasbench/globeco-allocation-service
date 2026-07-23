@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: allocation-service-sa
+  name: globeco-allocation-service
   namespace: globeco
   labels:
     app: globeco-allocation-service
@@ -27,7 +27,7 @@ metadata:
     app: globeco-allocation-service
 subjects:
 - kind: ServiceAccount
-  name: allocation-service-sa
+  name: globeco-allocation-service
   namespace: globeco
 roleRef:
   kind: Role
