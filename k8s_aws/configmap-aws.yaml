@@ -35,6 +35,15 @@ data:
   RETRY_MAX_ATTEMPTS: "2"
   RETRY_BASE_DELAY_MS: "500"
   
+  # Kubernetes batch job configuration
+  KUBERNETES_BATCH_ENABLED: "true"
+  KUBERNETES_BATCH_NAMESPACE: "globeco"
+  KUBERNETES_BATCH_CLI_IMAGE: "kasbench/globeco-portfolio-accounting-service-cli:latest"
+  KUBERNETES_BATCH_JOB_TIMEOUT_SECONDS: "1800"
+  KUBERNETES_BATCH_JOB_RETRY_LIMIT: "2"
+  KUBERNETES_BATCH_SERVICE_ACCOUNT_NAME: "globeco-allocation-service"
+  KUBERNETES_BATCH_NFS_PVC_NAME: "globeco-efs-pvc"
+  
   # OpenTelemetry configuration (GlobeCo standards)
   OBSERVABILITY_OTEL_ENABLED: "true"
   # OBSERVABILITY_OTEL_ENDPOINT: Set dynamically via Downward API in deployment
