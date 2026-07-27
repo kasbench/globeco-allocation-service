@@ -11,3 +11,4 @@ deployment.yaml
 hpa.yaml
 rbac.yaml
 portfolio-cli-configmap.yaml
+vpa.yaml
