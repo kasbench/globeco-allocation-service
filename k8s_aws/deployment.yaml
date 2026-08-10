@@ -96,6 +96,11 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 5
           failureThreshold: 12
+        resizePolicy:
+          - resourceName: cpu
+            restartPolicy: NotRequired
+          - resourceName: memory
+            restartPolicy: RestartContainer
         resources:
           requests:
             memory: "100Mi"
