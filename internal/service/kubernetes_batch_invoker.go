@@ -526,8 +526,17 @@ func (s *KubernetesBatchInvokerService) monitorJobCompletion(ctx context.Context
 		zap.String("job_name", jobName),
 		zap.Duration("timeout", s.timeout))
 
-	// Create context with timeout for monitoring (Requirement 2.1: timeout handling)
-	monitorCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	// Create context with timeout for monitoring (Requirement 2.1: timeout handling).
+	//
+	// IMPORTANT: derive from context.Background() rather than the request-scoped ctx.
+	// The incoming ctx is the HTTP request context, which is cancelled as soon as the
+	// caller (or any proxy/load balancer in front of the service) closes the connection.
+	// A typical proxy/client idle timeout (~120s) would otherwise cancel monitorCtx and
+	// abandon a batch job that is still running, while misreporting it as an s.timeout
+	// ("30m") timeout. Once the job is submitted, its lifecycle must not be tied to the
+	// inbound request. We still observe the parent ctx separately below so we can log the
+	// real cause, but we no longer let it kill the job monitoring.
+	monitorCtx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
 
 	// Use adaptive polling intervals for better efficiency
@@ -544,8 +553,28 @@ func (s *KubernetesBatchInvokerService) monitorJobCompletion(ctx context.Context
 
 	for {
 		select {
+		case <-ctx.Done():
+			// The request-scoped context was cancelled (e.g. the caller or an intermediate
+			// proxy/load balancer closed the connection). The batch job itself is unaffected
+			// and continues running in Kubernetes; we simply stop actively monitoring it here.
+			// This is logged as a warning rather than a timeout so it isn't confused with an
+			// actual s.timeout expiry.
+			elapsed := time.Since(startTime)
+			s.logger.Warn("Stopped monitoring job because the request context was cancelled; the Kubernetes job continues running",
+				zap.String("job_name", jobName),
+				zap.Duration("elapsed", elapsed),
+				zap.Error(ctx.Err()))
+
+			if finalJob, err := s.clientset.BatchV1().Jobs(s.config.Namespace).Get(context.Background(), jobName, metav1.GetOptions{}); err == nil {
+				s.logJobStatusDetails(finalJob, "request-cancelled")
+			}
+
+			return fmt.Errorf("stopped monitoring job %s after %v: request context cancelled (%w); the Kubernetes job may still be running", jobName, elapsed, ctx.Err())
+
 		case <-monitorCtx.Done():
-			// Enhanced timeout handling with detailed error information (Requirement 2.1)
+			// Enhanced timeout handling with detailed error information (Requirement 2.1).
+			// monitorCtx is derived from context.Background(), so reaching here means the
+			// configured monitoring timeout (s.timeout) genuinely elapsed.
 			elapsed := time.Since(startTime)
 			s.logger.Error("Job monitoring timed out",
 				zap.String("job_name", jobName),
