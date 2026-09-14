@@ -10,6 +10,16 @@ metadata:
 spec:
   {{- if eq .Values.autoscaler "vpa" }}
   replicas: 2
+  {{- else if eq .Values.autoscaler "horizontal-2" }}
+  replicas: 2
+  {{- else if eq .Values.autoscaler "horizontal-3" }}
+  replicas: 3
+  {{- else if eq .Values.autoscaler "horizontal-4" }}
+  replicas: 5
+  {{- else if eq .Values.autoscaler "horizontal-5" }}
+  replicas: 5
+  {{- else if eq .Values.autoscaler "horizontal-6" }}
+  replicas: 6
   {{- else }}
   replicas: 1
   {{- end }}
@@ -148,10 +158,22 @@ spec:
           resources:
             requests:
               memory: "100Mi"
-              cpu: "200m"
+              {{- if eq .Values.autoscaler "vertical-2" }}
+              cpu: "75.0m"
+              {{- else if eq .Values.autoscaler "vertical-3" }}
+              cpu: "100.0m"
+              {{- else if eq .Values.autoscaler "vertical-4" }}
+              cpu: "125.0m"
+              {{- else if eq .Values.autoscaler "vertical-5" }}
+              cpu: "150.0m"
+              {{- else if eq .Values.autoscaler "vertical-6" }}
+              cpu: "175.0m"
+              {{- else }}
+              cpu: "50m"
+              {{- end }}
             limits:
-              memory: "100Mi"
-              cpu: "200m"
+              memory: "6000Mi"
+
 
       volumes:
         - name: data
