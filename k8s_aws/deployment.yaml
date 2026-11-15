@@ -46,6 +46,13 @@ spec:
                 sleep 2
               done
               echo "PostgreSQL is up - continuing"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
 
       containers:
         - name: globeco-allocation-service
@@ -137,9 +144,8 @@ spec:
           resizePolicy:
             - resourceName: cpu
               restartPolicy: NotRequired
-
             - resourceName: memory
-              restartPolicy: RestartContainer
+              restartPolicy: NotRequired
 
           {{- include "globeco.globecoAllocationServiceResources" . | nindent 10 }}
 
